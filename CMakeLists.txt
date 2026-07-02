@@ -13,7 +13,22 @@ endif(${VERSION_PATCH})
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/CMakeModules")
 
+if(WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+   if(DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+      set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "vcpkg toolchain file")
+   else()
+      set(_VS2026_VCPKG_TOOLCHAIN "$ENV{ProgramFiles}/Microsoft Visual Studio/18/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake")
+      if(EXISTS "${_VS2026_VCPKG_TOOLCHAIN}")
+         set(CMAKE_TOOLCHAIN_FILE "${_VS2026_VCPKG_TOOLCHAIN}" CACHE FILEPATH "vcpkg toolchain file")
+      endif()
+   endif()
+endif()
+
 project(GameplayFootball LANGUAGES C CXX)
+
+if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+   message(FATAL_ERROR "GameplayFootball is currently configured for 32-bit Windows builds. Select the x86-Debug or vs2026-x86-debug configuration, not x64-Debug.")
+endif()
 
 set (CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -116,3 +131,27 @@ set(LIBRARIES gamelib hidlib menulib datalib leaguelib blunted2
 
 add_executable(gameplayfootball WIN32 ${CORE_SOURCES} ${CORE_HEADERS})
 target_link_libraries(gameplayfootball ${LIBRARIES})
+
+if(WIN32)
+   add_custom_command(TARGET gameplayfootball POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+         "${PROJECT_SOURCE_DIR}/data"
+         "$<TARGET_FILE_DIR:gameplayfootball>")
+
+   if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+      set(_VCPKG_RUNTIME_BIN "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
+      set(_VCPKG_RUNTIME_DEBUG_BIN "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin")
+
+      if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND EXISTS "${_VCPKG_RUNTIME_DEBUG_BIN}")
+         add_custom_command(TARGET gameplayfootball POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+               "${_VCPKG_RUNTIME_DEBUG_BIN}"
+               "$<TARGET_FILE_DIR:gameplayfootball>")
+      elseif(EXISTS "${_VCPKG_RUNTIME_BIN}")
+         add_custom_command(TARGET gameplayfootball POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+               "${_VCPKG_RUNTIME_BIN}"
+               "$<TARGET_FILE_DIR:gameplayfootball>")
+      endif()
+   endif()
+endif()

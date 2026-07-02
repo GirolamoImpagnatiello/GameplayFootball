@@ -1,0 +1,52 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "vs2026-x86-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "architecture": {
+        "value": "x86",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x86-windows",
+        "CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS": "TRUE"
+      }
+    },
+    {
+      "name": "vs2026-x86-release",
+      "displayName": "Visual Studio 2026 x86 Release",
+      "inherits": "vs2026-x86-base",
+      "binaryDir": "${sourceDir}/out/build-vs2026-x86",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "vs2026-x86-debug",
+      "displayName": "Visual Studio 2026 x86 Debug",
+      "inherits": "vs2026-x86-base",
+      "binaryDir": "${sourceDir}/out/build-vs2026-x86-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2026-x86-release",
+      "configurePreset": "vs2026-x86-release"
+    },
+    {
+      "name": "vs2026-x86-debug",
+      "configurePreset": "vs2026-x86-debug"
+    }
+  ]
+}
