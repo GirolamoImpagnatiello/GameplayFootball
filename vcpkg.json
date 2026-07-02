@@ -1,0 +1,25 @@
+{
+  "name": "gameplayfootball",
+  "version-string": "0.3",
+  "builtin-baseline": "1600ce2ba1b6b621bfc5a31a785c4963b817a1c7",
+  "dependencies": [
+    "boost-filesystem",
+    "boost-circular-buffer",
+    "boost-random",
+    "boost-signals2",
+    "boost-system",
+    "boost-thread",
+    "opengl",
+    "openal-soft",
+    "sdl2",
+    {
+      "name": "sdl2-image",
+      "features": [
+        "libjpeg-turbo"
+      ]
+    },
+    "sdl2-gfx",
+    "sdl2-ttf",
+    "sqlite3"
+  ]
+}

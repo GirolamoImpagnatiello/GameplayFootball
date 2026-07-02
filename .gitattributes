@@ -1,0 +1,8 @@
+# Keep source and build metadata line endings stable across platforms.
+CMakeLists.txt text eol=lf
+*.cmake text eol=lf
+*.c text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.json text eol=lf
