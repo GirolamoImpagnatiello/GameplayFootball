@@ -302,6 +302,7 @@ namespace blunted {
       virtual float HDRGetOverallBrightness() = 0;
 
       virtual bool SaveBackBuffer(const std::string &filename) = 0;
+      virtual void WaitForBackBufferSaves() = 0;
 
       void operator()() = 0;
 

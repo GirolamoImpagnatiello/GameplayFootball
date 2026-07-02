@@ -158,6 +158,13 @@ namespace blunted {
 
     renderCamera->Wait();
 
+    std::vector<std::string> backBufferSaveRequests = graphicsSystem->FetchBackBufferSaveRequests();
+    for (unsigned int i = 0; i < backBufferSaveRequests.size(); ++i) {
+      boost::intrusive_ptr<Renderer3DMessage_SaveBackBuffer> saveBackBuffer(new Renderer3DMessage_SaveBackBuffer(backBufferSaveRequests[i]));
+      renderer3D->messageQueue.PushMessage(saveBackBuffer, true);
+      saveBackBuffer->Wait();
+    }
+
     // render the Overlay2D queue
     boost::intrusive_ptr<Renderer3DMessage_RenderOverlay2D> renderOverlay2D(new Renderer3DMessage_RenderOverlay2D(graphicsSystem->GetOverlay2DQueue()));
     renderer3D->messageQueue.PushMessage(renderOverlay2D, true);
@@ -167,13 +174,6 @@ namespace blunted {
   void GraphicsTask::PutPhase() {
     TaskManager *taskManager = TaskManager::GetInstancePtr();
     Renderer3D *renderer3D = graphicsSystem->GetRenderer3D();
-
-    std::vector<std::string> backBufferSaveRequests = graphicsSystem->FetchBackBufferSaveRequests();
-    for (unsigned int i = 0; i < backBufferSaveRequests.size(); ++i) {
-      boost::intrusive_ptr<Renderer3DMessage_SaveBackBuffer> saveBackBuffer(new Renderer3DMessage_SaveBackBuffer(backBufferSaveRequests[i]));
-      renderer3D->messageQueue.PushMessage(saveBackBuffer, true);
-      saveBackBuffer->Wait();
-    }
 
     // swap the buffers and stare in awe
     swapBuffers = new Renderer3DMessage_SwapBuffers();

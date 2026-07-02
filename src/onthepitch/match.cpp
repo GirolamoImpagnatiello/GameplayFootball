@@ -785,13 +785,14 @@ void Match::InitializeSoccerReplayExporter() {
 
   if (datasetExporter && datasetExporter->IsEnabled()) {
     datasetExporter->SetScore(matchData->GetGoalCount(0), matchData->GetGoalCount(1));
-    datasetExporter->Flush();
+    datasetExporter->FlushAnnotationsOnly();
   }
 }
 
 void Match::FlushSoccerReplayExporter() {
   if (!datasetExporter || !datasetExporter->IsEnabled()) return;
 
+  GetGraphicsSystem()->WaitForBackBufferSaves();
   datasetExporter->SetScore(matchData->GetGoalCount(0), matchData->GetGoalCount(1));
   datasetExporter->Flush();
 }
@@ -810,7 +811,7 @@ void Match::RecordSoccerReplayPhaseStart(e_MatchPhase phase) {
   eventDescription.actual_time_ms = actualTime_ms;
 
   datasetExporter->RecordEvent(eventDescription);
-  datasetExporter->Flush();
+  datasetExporter->FlushAnnotationsOnly();
 }
 
 void Match::RecordSoccerReplayPhaseEnd(e_MatchPhase phase) {
@@ -827,7 +828,7 @@ void Match::RecordSoccerReplayPhaseEnd(e_MatchPhase phase) {
   eventDescription.actual_time_ms = actualTime_ms;
 
   datasetExporter->RecordHalfEndOnce(PhaseName(phase), eventDescription);
-  datasetExporter->Flush();
+  datasetExporter->FlushAnnotationsOnly();
 }
 
 void Match::RecordSoccerReplayGoal(bool ownGoal) {
@@ -858,7 +859,7 @@ void Match::RecordSoccerReplayGoal(bool ownGoal) {
 
   datasetExporter->SetScore(matchData->GetGoalCount(0), matchData->GetGoalCount(1));
   datasetExporter->RecordEvent(eventDescription);
-  datasetExporter->Flush();
+  datasetExporter->FlushAnnotationsOnly();
 }
 
 void Match::RecordSoccerReplayPossession() {
@@ -884,7 +885,7 @@ void Match::RecordSoccerReplayPossession() {
   if (datasetExporter->RecordEvent(eventDescription)) {
     datasetLastPossessionTeamID = possessionTeamID;
     datasetLastPossessionEventTime_ms = actualTime_ms;
-    datasetExporter->Flush();
+    datasetExporter->FlushAnnotationsOnly();
   }
 }
 
@@ -894,7 +895,7 @@ void Match::ScheduleSoccerReplayFrameDump() {
   if (pause) return;
 
   const int half = GetSoccerReplayHalf(matchPhase);
-  const int halfSecond = GetSoccerReplayHalfSecond(fetchedbuf_matchTime_ms, matchPhase);
+  const int halfSecond = static_cast<int>(fetchedbuf_actualTime_ms / 1000);
   if (half == datasetLastFrameHalf && halfSecond == datasetLastFrameSecond) return;
 
   const std::string timeStamp = FormatSoccerReplayTimeStamp(fetchedbuf_matchTime_ms, matchPhase);
@@ -905,7 +906,6 @@ void Match::ScheduleSoccerReplayFrameDump() {
   datasetLastFrameSecond = halfSecond;
 
   GetGraphicsSystem()->RequestBackBufferSave(frameFilename);
-  datasetExporter->Flush();
 }
 
 void Match::GetCameraParams(float &zoom, float &height, float &fov, float &angleFactor) {

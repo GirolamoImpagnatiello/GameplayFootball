@@ -58,11 +58,13 @@ class SoccerReplayExporter {
     bool IsEnabled() const { return enabled; }
     const std::string &GetOutputDirectory() const { return outputDirectory; }
     const std::string &GetFramesDirectory() const { return framesDirectory; }
+    const std::string &GetClipsDirectory() const { return clipsDirectory; }
 
     void SetScore(int homeGoals, int awayGoals);
     bool RecordEvent(const EventDescription &eventDescription);
     bool RecordHalfEndOnce(const std::string &phaseKey, const EventDescription &eventDescription);
     std::string RegisterFrameDump(int half, const std::string &timeStamp, unsigned long matchTime_ms, unsigned long actualTime_ms);
+    bool FlushAnnotationsOnly();
     bool Flush();
 
   private:
@@ -83,6 +85,7 @@ class SoccerReplayExporter {
 
     std::string outputDirectory;
     std::string framesDirectory;
+    std::string clipsDirectory;
     std::string annotationsFilename;
     std::string frameIndexFilename;
     bool enabled;

@@ -31,6 +31,9 @@
 #include <cmath>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <boost/make_shared.hpp>
+#include <boost/shared_ptr.hpp>
+#include <boost/thread.hpp>
 
 #include "base/log.hpp"
 #include "managers/environmentmanager.hpp"
@@ -48,6 +51,38 @@
 #ifdef WIN32
 #include <wingdi.h>
 #endif
+
+namespace {
+
+boost::mutex asyncBackBufferSaveMutex;
+std::vector<boost::shared_ptr<boost::thread> > asyncBackBufferSaveThreads;
+
+void WritePngAsync(const std::string filename, boost::shared_ptr<std::vector<unsigned char> > pixels, int width, int height, int stride) {
+  SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(&(*pixels)[0], width, height, 32, stride, SDL_PIXELFORMAT_RGBA32);
+  if (surface) {
+    IMG_SavePNG(surface, filename.c_str());
+    SDL_FreeSurface(surface);
+  }
+}
+
+void TrackAsyncBackBufferSave(boost::shared_ptr<boost::thread> thread) {
+  boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
+  asyncBackBufferSaveThreads.push_back(thread);
+}
+
+void WaitForAsyncBackBufferSaves() {
+  std::vector<boost::shared_ptr<boost::thread> > threads;
+  {
+    boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
+    threads.swap(asyncBackBufferSaveThreads);
+  }
+
+  for (std::size_t i = 0; i < threads.size(); ++i) {
+    if (threads[i]) threads[i]->join();
+  }
+}
+
+}
 
 namespace blunted {
 
@@ -1812,7 +1847,7 @@ struct GLfunctions {
     if (context_width <= 0 || context_height <= 0) return false;
 
     std::vector<unsigned char> pixels(context_width * context_height * 4);
-    std::vector<unsigned char> flipped(context_width * context_height * 4);
+    boost::shared_ptr<std::vector<unsigned char> > flipped = boost::make_shared<std::vector<unsigned char> >(context_width * context_height * 4);
 
     glReadBuffer(GL_BACK);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
@@ -1821,16 +1856,20 @@ struct GLfunctions {
     const int stride = context_width * 4;
     for (int y = 0; y < context_height; ++y) {
       const unsigned char *src = &pixels[(context_height - y - 1) * stride];
-      unsigned char *dst = &flipped[y * stride];
+      unsigned char *dst = &(*flipped)[y * stride];
       std::copy(src, src + stride, dst);
+      for (int x = 0; x < context_width; ++x) {
+        dst[x * 4 + 3] = 255;
+      }
     }
 
-    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(&flipped[0], context_width, context_height, 32, stride, SDL_PIXELFORMAT_RGBA32);
-    if (!surface) return false;
+    boost::shared_ptr<boost::thread> writerThread = boost::make_shared<boost::thread>(WritePngAsync, filename, flipped, context_width, context_height, stride);
+    TrackAsyncBackBufferSave(writerThread);
+    return true;
+  }
 
-    const bool success = IMG_SavePNG(surface, filename.c_str()) == 0;
-    SDL_FreeSurface(surface);
-    return success;
+  void OpenGLRenderer3D::WaitForBackBufferSaves() {
+    WaitForAsyncBackBufferSaves();
   }
 
   void OpenGLRenderer3D::SetPolygonOffset(float scale, float bias) {

@@ -84,6 +84,34 @@ static std::string Quote(const std::string &value) {
   return "\"" + JsonEscape(value) + "\"";
 }
 
+static std::string FormatClipFrameFile(int clipFrameNumber) {
+  std::ostringstream filename;
+  filename << "frame_" << std::setfill('0') << std::setw(6) << clipFrameNumber << ".png";
+  return filename.str();
+}
+
+static std::string FormatClipDirectory(int eventIndex) {
+  std::ostringstream directory;
+  directory << "clips/event_" << std::setfill('0') << std::setw(6) << eventIndex;
+  return directory.str();
+}
+
+static unsigned long DistanceToTarget_ms(unsigned long value_ms, long target_ms) {
+  const long value = static_cast<long>(value_ms);
+  return value > target_ms ? static_cast<unsigned long>(value - target_ms) : static_cast<unsigned long>(target_ms - value);
+}
+
+static bool CopyFileIfAvailable(const boost::filesystem::path &source, const boost::filesystem::path &destination) {
+  boost::system::error_code error;
+  if (!boost::filesystem::exists(source)) return false;
+  boost::filesystem::create_directories(destination.parent_path(), error);
+  error.clear();
+  if (boost::filesystem::exists(destination)) boost::filesystem::remove(destination, error);
+  error.clear();
+  boost::filesystem::copy_file(source, destination, error);
+  return !error;
+}
+
 static std::string FormatNow(const char *format) {
   std::time_t now = std::time(0);
   std::tm localNow;
@@ -101,12 +129,14 @@ SoccerReplayExporter::SoccerReplayExporter(MatchData *matchData, const std::stri
   std::string safeOutputRoot = outputRoot.empty() ? "output/datasets/soccerreplay1988" : outputRoot;
   outputDirectory = (boost::filesystem::path(safeOutputRoot) / ("match_" + FormatNow("%Y%m%d_%H%M%S"))).string();
   framesDirectory = (boost::filesystem::path(outputDirectory) / "frames").string();
+  clipsDirectory = (boost::filesystem::path(outputDirectory) / "clips").string();
   annotationsFilename = (boost::filesystem::path(outputDirectory) / "annotations.json").string();
   frameIndexFilename = (boost::filesystem::path(outputDirectory) / "frame_index.json").string();
 
   try {
     boost::filesystem::create_directories(outputDirectory);
     boost::filesystem::create_directories(framesDirectory);
+    boost::filesystem::create_directories(clipsDirectory);
     enabled = true;
   } catch (...) {
     enabled = false;
@@ -188,6 +218,10 @@ bool SoccerReplayExporter::Flush() {
   return annotationsOk && frameIndexOk;
 }
 
+bool SoccerReplayExporter::FlushAnnotationsOnly() {
+  return FlushAnnotations();
+}
+
 bool SoccerReplayExporter::FlushAnnotations() {
   if (!enabled) return false;
 
@@ -251,13 +285,23 @@ bool SoccerReplayExporter::FlushFrameIndex() {
   std::ofstream output(frameIndexFilename.c_str(), std::ios::out | std::ios::trunc);
   if (!output.is_open()) return false;
 
+  std::vector<std::size_t> availableFrameIndexes;
+  for (std::size_t i = 0; i < frameDumpRecords.size(); ++i) {
+    const boost::filesystem::path framePath = boost::filesystem::path(outputDirectory) / frameDumpRecords[i].file;
+    if (boost::filesystem::exists(framePath)) availableFrameIndexes.push_back(i);
+  }
+
   output << "{\n";
   output << "  \"fps\": 1,\n";
   output << "  \"window_duration_seconds\": 30,\n";
+  output << "  \"window_start_offset_seconds\": -15,\n";
+  output << "  \"window_end_offset_seconds\": 14,\n";
+  output << "  \"window_semantics\": \"[event-15s,event+15s)\",\n";
   output << "  \"frame_directory\": \"frames\",\n";
+  output << "  \"clip_directory\": \"clips\",\n";
   output << "  \"frames\": [\n";
-  for (std::size_t i = 0; i < frameDumpRecords.size(); ++i) {
-    const FrameDumpRecord &frame = frameDumpRecords[i];
+  for (std::size_t i = 0; i < availableFrameIndexes.size(); ++i) {
+    const FrameDumpRecord &frame = frameDumpRecords[availableFrameIndexes[i]];
     output << "    {\n";
     output << "      \"frame_number\": " << frame.frame_number << ",\n";
     output << "      \"file\": " << Quote(frame.file) << ",\n";
@@ -265,7 +309,7 @@ bool SoccerReplayExporter::FlushFrameIndex() {
     output << "      \"time_stamp\": " << Quote(frame.time_stamp) << ",\n";
     output << "      \"match_time_ms\": " << frame.match_time_ms << ",\n";
     output << "      \"actual_time_ms\": " << frame.actual_time_ms << "\n";
-    output << "    }" << (i + 1 == frameDumpRecords.size() ? "\n" : ",\n");
+    output << "    }" << (i + 1 == availableFrameIndexes.size() ? "\n" : ",\n");
   }
   output << "  ],\n";
 
@@ -273,51 +317,43 @@ bool SoccerReplayExporter::FlushFrameIndex() {
   for (std::size_t eventIndex = 0; eventIndex < eventDescriptions.size(); ++eventIndex) {
     const EventDescription &eventDescription = eventDescriptions[eventIndex];
     std::vector<std::size_t> halfFrameIndexes;
-    for (std::size_t frameIndex = 0; frameIndex < frameDumpRecords.size(); ++frameIndex) {
-      if (frameDumpRecords[frameIndex].half == eventDescription.half) halfFrameIndexes.push_back(frameIndex);
+    for (std::size_t frameIndex = 0; frameIndex < availableFrameIndexes.size(); ++frameIndex) {
+      const std::size_t recordIndex = availableFrameIndexes[frameIndex];
+      if (frameDumpRecords[recordIndex].half == eventDescription.half) halfFrameIndexes.push_back(recordIndex);
     }
 
     int frameCenter = 0;
     int frameStart = 0;
     int frameEnd = 0;
-    int frameCount = 0;
-    unsigned long windowStart_ms = eventDescription.match_time_ms;
-    unsigned long windowEnd_ms = eventDescription.match_time_ms;
-    bool eventInsideWindow = false;
+    std::vector<std::size_t> clipFrameIndexes;
+    const std::string clipDirectory = FormatClipDirectory(static_cast<int>(eventIndex));
 
     if (!halfFrameIndexes.empty()) {
-      std::size_t closestHalfFrame = 0;
-      unsigned long closestDistance = static_cast<unsigned long>(-1);
-      for (std::size_t i = 0; i < halfFrameIndexes.size(); ++i) {
-        const FrameDumpRecord &frame = frameDumpRecords[halfFrameIndexes[i]];
-        const unsigned long distance = frame.match_time_ms > eventDescription.match_time_ms ?
-          frame.match_time_ms - eventDescription.match_time_ms :
-          eventDescription.match_time_ms - frame.match_time_ms;
-        if (distance < closestDistance) {
-          closestDistance = distance;
-          closestHalfFrame = i;
+      for (int offsetSeconds = -15; offsetSeconds <= 14; ++offsetSeconds) {
+        const long targetActualTime_ms = static_cast<long>(eventDescription.actual_time_ms) + offsetSeconds * 1000;
+        std::size_t closestHalfFrame = 0;
+        unsigned long closestDistance = static_cast<unsigned long>(-1);
+        for (std::size_t i = 0; i < halfFrameIndexes.size(); ++i) {
+          const FrameDumpRecord &frame = frameDumpRecords[halfFrameIndexes[i]];
+          const unsigned long distance = DistanceToTarget_ms(frame.actual_time_ms, targetActualTime_ms);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestHalfFrame = i;
+          }
         }
-      }
 
-      int startHalfFrame = static_cast<int>(closestHalfFrame) - 15;
-      if (startHalfFrame < 0) startHalfFrame = 0;
-      if (startHalfFrame + 29 >= static_cast<int>(halfFrameIndexes.size())) {
-        startHalfFrame = static_cast<int>(halfFrameIndexes.size()) - 30;
-        if (startHalfFrame < 0) startHalfFrame = 0;
-      }
-      int endHalfFrame = startHalfFrame + 29;
-      if (endHalfFrame >= static_cast<int>(halfFrameIndexes.size())) endHalfFrame = static_cast<int>(halfFrameIndexes.size()) - 1;
+        const std::size_t selectedFrameIndex = halfFrameIndexes[closestHalfFrame];
+        const FrameDumpRecord &selectedFrame = frameDumpRecords[selectedFrameIndex];
+        clipFrameIndexes.push_back(selectedFrameIndex);
 
-      const FrameDumpRecord &centerFrame = frameDumpRecords[halfFrameIndexes[closestHalfFrame]];
-      const FrameDumpRecord &startFrame = frameDumpRecords[halfFrameIndexes[startHalfFrame]];
-      const FrameDumpRecord &endFrame = frameDumpRecords[halfFrameIndexes[endHalfFrame]];
-      frameCenter = centerFrame.frame_number;
-      frameStart = startFrame.frame_number;
-      frameEnd = endFrame.frame_number;
-      frameCount = frameEnd - frameStart + 1;
-      windowStart_ms = startFrame.match_time_ms;
-      windowEnd_ms = endFrame.match_time_ms;
-      eventInsideWindow = eventDescription.match_time_ms >= windowStart_ms && eventDescription.match_time_ms <= windowEnd_ms;
+        if (frameStart == 0 || selectedFrame.frame_number < frameStart) frameStart = selectedFrame.frame_number;
+        if (selectedFrame.frame_number > frameEnd) frameEnd = selectedFrame.frame_number;
+        if (offsetSeconds == 0) frameCenter = selectedFrame.frame_number;
+
+        const int clipFrameNumber = offsetSeconds + 16;
+        const std::string clipFrameFile = clipDirectory + "/" + FormatClipFrameFile(clipFrameNumber);
+        CopyFileIfAvailable(boost::filesystem::path(outputDirectory) / selectedFrame.file, boost::filesystem::path(outputDirectory) / clipFrameFile);
+      }
     }
 
     output << "    {\n";
@@ -326,15 +362,47 @@ bool SoccerReplayExporter::FlushFrameIndex() {
     output << "      \"comments_type\": " << Quote(eventDescription.comments_type) << ",\n";
     output << "      \"time_stamp\": " << Quote(eventDescription.time_stamp) << ",\n";
     output << "      \"event_match_time_ms\": " << eventDescription.match_time_ms << ",\n";
+    output << "      \"event_actual_time_ms\": " << eventDescription.actual_time_ms << ",\n";
     output << "      \"fps\": 1,\n";
     output << "      \"window_duration_seconds\": 30,\n";
+    output << "      \"window_start_offset_seconds\": -15,\n";
+    output << "      \"window_end_offset_seconds\": 14,\n";
+    output << "      \"window_semantics\": \"[event-15s,event+15s)\",\n";
+    output << "      \"clip_directory\": " << Quote(clipDirectory) << ",\n";
+    output << "      \"clip_frame_count\": " << clipFrameIndexes.size() << ",\n";
     output << "      \"frame_center\": " << frameCenter << ",\n";
     output << "      \"frame_start\": " << frameStart << ",\n";
     output << "      \"frame_end\": " << frameEnd << ",\n";
-    output << "      \"frame_count\": " << frameCount << ",\n";
-    output << "      \"window_start_match_time_ms\": " << windowStart_ms << ",\n";
-    output << "      \"window_end_match_time_ms\": " << windowEnd_ms << ",\n";
-    output << "      \"event_inside_window\": " << (eventInsideWindow ? "true" : "false") << "\n";
+    output << "      \"frame_count\": " << clipFrameIndexes.size() << ",\n";
+    output << "      \"window_start_actual_time_ms\": " << (static_cast<long>(eventDescription.actual_time_ms) - 15000) << ",\n";
+    output << "      \"window_end_actual_time_ms\": " << (static_cast<long>(eventDescription.actual_time_ms) + 15000) << ",\n";
+    output << "      \"event_inside_window\": true,\n";
+    output << "      \"clip_frames\": [\n";
+    for (std::size_t clipFrameIndex = 0; clipFrameIndex < clipFrameIndexes.size(); ++clipFrameIndex) {
+      const int offsetSeconds = static_cast<int>(clipFrameIndex) - 15;
+      const long targetActualTime_ms = static_cast<long>(eventDescription.actual_time_ms) + offsetSeconds * 1000;
+      const FrameDumpRecord &selectedFrame = frameDumpRecords[clipFrameIndexes[clipFrameIndex]];
+      bool isPadding = false;
+      if (!halfFrameIndexes.empty()) {
+        const FrameDumpRecord &firstHalfFrame = frameDumpRecords[halfFrameIndexes.front()];
+        const FrameDumpRecord &lastHalfFrame = frameDumpRecords[halfFrameIndexes.back()];
+        isPadding = targetActualTime_ms < static_cast<long>(firstHalfFrame.actual_time_ms) || targetActualTime_ms > static_cast<long>(lastHalfFrame.actual_time_ms);
+      }
+      const std::string clipFrameFile = clipDirectory + "/" + FormatClipFrameFile(static_cast<int>(clipFrameIndex) + 1);
+
+      output << "        {\n";
+      output << "          \"clip_frame_number\": " << (clipFrameIndex + 1) << ",\n";
+      output << "          \"offset_seconds\": " << offsetSeconds << ",\n";
+      output << "          \"target_actual_time_ms\": " << targetActualTime_ms << ",\n";
+      output << "          \"source_frame_number\": " << selectedFrame.frame_number << ",\n";
+      output << "          \"source_file\": " << Quote(selectedFrame.file) << ",\n";
+      output << "          \"clip_file\": " << Quote(clipFrameFile) << ",\n";
+      output << "          \"source_actual_time_ms\": " << selectedFrame.actual_time_ms << ",\n";
+      output << "          \"source_match_time_ms\": " << selectedFrame.match_time_ms << ",\n";
+      output << "          \"is_padding\": " << (isPadding ? "true" : "false") << "\n";
+      output << "        }" << (clipFrameIndex + 1 == clipFrameIndexes.size() ? "\n" : ",\n");
+    }
+    output << "      ]\n";
     output << "    }" << (eventIndex + 1 == eventDescriptions.size() ? "\n" : ",\n");
   }
   output << "  ]\n";

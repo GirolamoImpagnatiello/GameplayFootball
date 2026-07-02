@@ -81,6 +81,19 @@ namespace blunted {
 
   };
 
+  class Renderer3DMessage_WaitForBackBufferSaves : public Command {
+
+    public:
+      Renderer3DMessage_WaitForBackBufferSaves() : Command("r3dmsg_WaitForBackBufferSaves") {};
+
+    protected:
+      virtual bool Execute(void *caller = NULL) {
+        static_cast<Renderer3D*>(caller)->WaitForBackBufferSaves();
+        return true;
+      }
+
+  };
+
   class Renderer3DMessage_CreateTexture : public Command {
 
     public:

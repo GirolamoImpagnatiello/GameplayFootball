@@ -19,6 +19,9 @@ match_<id>/
   1-half.mkv
   2-half.mkv
   annotations.json
+  frame_index.json
+  frames/
+  clips/
 ```
 
 The videos must start at each half kick-off, matching SoccerReplay-1988.
@@ -180,8 +183,15 @@ These rules must be mirrored when mapping simulator state to labels:
 
 For action recognition with MatchVision:
 
-- Export clips with a 30-second temporal window centered on the event when
-  possible.
+- Export each annotated event as a 30-frame image clip sampled at 1 FPS.
+- The clip window is `[event-15s,event+15s)`, implemented with integer offsets
+  `-15, -14, ..., +14`. This gives exactly 30 frames and keeps the action
+  timestamp inside the sample.
+- Sampling must use rendered video time (`actual_time_ms`), not simulator match
+  time (`match_time_ms`). The simulator clock can run faster than real render
+  time, so `match_time_ms` is only metadata for SoccerReplay timestamps.
+- Near half boundaries, repeat the nearest available rendered frame and mark
+  those clip entries with `is_padding: true`.
 - Resize/preprocess frames downstream to 224 x 224 with SigLIP-style
   normalization, mean `0.5` and standard deviation `0.5`.
 - Keep a sidecar frame index file if needed by Unisoccer, but do not change the
@@ -195,10 +205,32 @@ Recommended sidecar:
   "half": 1,
   "comments_type": "shot off target",
   "time_stamp": "00:16",
+  "event_match_time_ms": 16000,
+  "event_actual_time_ms": 4800,
+  "fps": 1,
+  "window_duration_seconds": 30,
+  "window_start_offset_seconds": -15,
+  "window_end_offset_seconds": 14,
+  "window_semantics": "[event-15s,event+15s)",
+  "clip_directory": "clips/event_000000",
+  "clip_frame_count": 30,
   "frame_center": 400,
-  "frame_start": 25,
-  "frame_end": 775,
-  "match_time_ms": 16000
+  "frame_start": 1,
+  "frame_end": 19,
+  "frame_count": 30,
+  "clip_frames": [
+    {
+      "clip_frame_number": 1,
+      "offset_seconds": -15,
+      "target_actual_time_ms": -10200,
+      "source_frame_number": 1,
+      "source_file": "frames/frame_000001.png",
+      "clip_file": "clips/event_000000/frame_000001.png",
+      "source_actual_time_ms": 0,
+      "source_match_time_ms": 0,
+      "is_padding": true
+    }
+  ]
 }
 ```
 
@@ -229,6 +261,11 @@ output/datasets/soccerreplay1988/match_YYYYMMDD_HHMMSS/
   frames/
     frame_000001.png
     frame_000002.png
+  clips/
+    event_000000/
+      frame_000001.png
+      ...
+      frame_000030.png
 ```
 
 `annotations.json` keeps the SoccerReplay-style schema only. Frame metadata is
@@ -236,11 +273,16 @@ stored in `frame_index.json` as a sidecar artifact.
 
 Frame dump rules:
 
-- Capture rendered framebuffer PNGs at 1 fps in match time.
-- Use 30-second/30-frame event windows in `frame_index.json`.
-- Keep the event time inside the selected window.
-- Shift the window near half boundaries when the centered 30-second window is
-  not available.
+- Capture rendered framebuffer PNGs at 1 FPS in video/render time.
+- Capture frames before the 2D overlay pass, so dataset images do not include
+  scoreboard, radar/minimap, captions, or other HUD elements.
+- Keep global frame metadata under `frames`.
+- Create one `clips/event_XXXXXX/` directory per annotated event.
+- Each event clip contains exactly 30 PNGs sampled at 1 FPS with offsets
+  `-15..+14` seconds around the event's `actual_time_ms`.
+- Keep the event timestamp inside the selected window by construction.
+- Near half boundaries, duplicate the nearest available frame and mark the clip
+  entry as padding in `frame_index.json`.
 
 Validation:
 

@@ -53,6 +53,7 @@ namespace blunted {
       int GetTimeSinceLastSwap_ms() const { assert(task); return task->GetTimeSinceLastSwap_ms(); }
       void RequestBackBufferSave(const std::string &filename);
       std::vector<std::string> FetchBackBufferSaveRequests();
+      void WaitForBackBufferSaves();
 
       virtual std::string GetName() const { return "graphics"; }
 

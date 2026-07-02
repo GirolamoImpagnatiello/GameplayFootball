@@ -62,6 +62,8 @@ namespace blunted {
     delete task;
     task = NULL;
 
+    WaitForBackBufferSaves();
+
     textureResourceManager.reset();
     vertexBufferResourceManager.reset();
 
@@ -115,6 +117,21 @@ namespace blunted {
     std::vector<std::string> result = backBufferSaveRequests;
     backBufferSaveRequests.clear();
     return result;
+  }
+
+  void GraphicsSystem::WaitForBackBufferSaves() {
+    if (!renderer3DTask) return;
+
+    std::vector<std::string> pendingRequests = FetchBackBufferSaveRequests();
+    for (unsigned int i = 0; i < pendingRequests.size(); ++i) {
+      boost::intrusive_ptr<Renderer3DMessage_SaveBackBuffer> saveBackBuffer(new Renderer3DMessage_SaveBackBuffer(pendingRequests[i]));
+      renderer3DTask->messageQueue.PushMessage(saveBackBuffer, true);
+      saveBackBuffer->Wait();
+    }
+
+    boost::intrusive_ptr<Renderer3DMessage_WaitForBackBufferSaves> waitForBackBufferSaves(new Renderer3DMessage_WaitForBackBufferSaves());
+    renderer3DTask->messageQueue.PushMessage(waitForBackBufferSaves, true);
+    waitForBackBufferSaves->Wait();
   }
 
 }
