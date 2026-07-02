@@ -390,6 +390,16 @@ set(CORE_SOURCES
    src/gamedefines.cpp
 )
 
+set(DATASET_HEADERS
+   src/dataset/soccerreplay_event.hpp
+   src/dataset/soccerreplay_exporter.hpp
+   src/dataset/soccerreplay_labels.hpp
+)
+
+set(DATASET_SOURCES
+   src/dataset/soccerreplay_exporter.cpp
+)
+
 set(GAME_HEADERS
    src/onthepitch/humangamer.hpp
    src/onthepitch/officials.hpp
@@ -419,6 +429,7 @@ set(GAME_HEADERS
    src/onthepitch/AIsupport/mentalimage.hpp
    src/onthepitch/teamAIcontroller.hpp
    src/onthepitch/proceduralpitch.hpp
+   ${DATASET_HEADERS}
 )
 
 set(GAME_SOURCES
@@ -450,6 +461,7 @@ set(GAME_SOURCES
    src/onthepitch/proceduralpitch.cpp
    src/onthepitch/team.cpp
    src/onthepitch/teamAIcontroller.cpp
+   ${DATASET_SOURCES}
 )
 
 set(HID_HEADERS

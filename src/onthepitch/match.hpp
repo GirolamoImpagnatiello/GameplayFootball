@@ -35,6 +35,13 @@
 
 #include <fstream>
 #include <iostream>
+#include <memory>
+
+namespace dataset {
+namespace soccerreplay1988 {
+class SoccerReplayExporter;
+}
+}
 
 struct ReplaySpatialFrame {
   unsigned long frameTime_ms;
@@ -234,6 +241,13 @@ class Match {
     void CheckHumanoidCollision(Player *p1, Player *p2, std::vector<PlayerBounce> &p1Bounce, std::vector<PlayerBounce> &p2Bounce);
     void CheckBallCollisions();
 
+    void InitializeSoccerReplayExporter();
+    void FlushSoccerReplayExporter();
+    void RecordSoccerReplayPhaseStart(e_MatchPhase phase);
+    void RecordSoccerReplayPhaseEnd(e_MatchPhase phase);
+    void RecordSoccerReplayGoal(bool ownGoal);
+    void RecordSoccerReplayPossession();
+
     void PrepareGoalNetting();
     void UpdateGoalNetting(bool ballTouchesNet = false);
 
@@ -311,6 +325,11 @@ class Match {
     ValueHistory<float> *possessionSideHistory;
 
     bool autoUpdateIngameCamera;
+
+    std::unique_ptr<dataset::soccerreplay1988::SoccerReplayExporter> datasetExporter;
+    int datasetLastPossessionTeamID;
+    unsigned long datasetLastPossessionEventTime_ms;
+    bool datasetGameOverRecorded;
 
     // camera
     Quaternion cameraOrientation;

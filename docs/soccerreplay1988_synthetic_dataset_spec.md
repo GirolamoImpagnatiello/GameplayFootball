@@ -202,3 +202,30 @@ Recommended sidecar:
 }
 ```
 
+## Baseline Exporter In This Project
+
+The first implementation is intentionally small and conservative. It exports:
+
+- `start of game(half)`
+- `end of game(half)`
+- `goal`
+- `own goal`
+- `ball possession`
+
+The exporter is enabled by default. It can be disabled or redirected in
+`football.config`:
+
+```text
+dataset_export_enabled=false
+dataset_export_root=output/datasets/soccerreplay1988
+```
+
+Default output:
+
+```text
+output/datasets/soccerreplay1988/match_YYYYMMDD_HHMMSS/annotations.json
+```
+
+The baseline writes only the SoccerReplay-style annotation JSON. Video files,
+frame dumps, and MatchVision/Unisoccer frame indexes should be added as sidecar
+artifacts in the next implementation step.

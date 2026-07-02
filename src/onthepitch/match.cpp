@@ -23,17 +23,61 @@
 
 #include "base/log.hpp"
 
+#include "dataset/soccerreplay_exporter.hpp"
+#include "dataset/soccerreplay_labels.hpp"
+
 #include "menu/pagefactory.hpp"
 #include "menu/startmatch/loadingmatch.hpp"
 
+#include <iomanip>
+#include <sstream>
+
 const unsigned int replaySize_ms = 10000;
 const unsigned int camPosSize = 150;//180; //130
+
+namespace {
+
+bool IsSoccerReplayMainPhase(e_MatchPhase phase) {
+  return phase == e_MatchPhase_1stHalf || phase == e_MatchPhase_2ndHalf;
+}
+
+int GetSoccerReplayHalf(e_MatchPhase phase) {
+  if (phase == e_MatchPhase_2ndHalf) return 2;
+  return 1;
+}
+
+unsigned long GetSoccerReplayHalfStart_ms(e_MatchPhase phase) {
+  if (phase == e_MatchPhase_2ndHalf) return 2700000;
+  return 0;
+}
+
+std::string FormatSoccerReplayTimeStamp(unsigned long matchTime_ms, e_MatchPhase phase) {
+  const unsigned long halfStart_ms = GetSoccerReplayHalfStart_ms(phase);
+  const unsigned long relative_ms = matchTime_ms > halfStart_ms ? matchTime_ms - halfStart_ms : 0;
+  const unsigned long totalSeconds = relative_ms / 1000;
+
+  std::ostringstream result;
+  result << std::setfill('0') << std::setw(2) << (totalSeconds / 60) << ":"
+         << std::setfill('0') << std::setw(2) << (totalSeconds % 60);
+  return result.str();
+}
+
+std::string PhaseName(e_MatchPhase phase) {
+  if (phase == e_MatchPhase_1stHalf) return "first half";
+  if (phase == e_MatchPhase_2ndHalf) return "second half";
+  return "half";
+}
+
+}
 
 Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) : matchData(matchData), controllers(controllers) {
 
   Log(e_Notice, "Match", "Match", "Starting Match");
 
   _positionLogging = false;
+  datasetLastPossessionTeamID = -1;
+  datasetLastPossessionEventTime_ms = 0;
+  datasetGameOverRecorded = false;
 
   // shared ptr to menutask, because menutask shouldn't die before match does
   menuTask = GetMenuTask();
@@ -280,6 +324,8 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   lastTouchTeamID = -1;
   lastGoalScorer = 0;
   bestPossessionTeamID = -1;
+  matchPhase = e_MatchPhase_PreMatch;
+  InitializeSoccerReplayExporter();
   SetMatchPhase(e_MatchPhase_PreMatch);
 
   gameSequenceInfo = GetScheduler()->GetTaskSequenceInfo("game");
@@ -405,6 +451,8 @@ Match::~Match() {
 
 void Match::Exit() {
   if (Verbose()) printf("exiting match.. ");
+
+  FlushSoccerReplayExporter();
 
   if (Verbose()) printf("\nscene3D tree before match Exit():\n");
   if (Verbose()) scene3D->PrintTree();
@@ -685,12 +733,21 @@ void Match::ResetSituation(const Vector3 &focusPos) {
 }
 
 void Match::SetMatchPhase(e_MatchPhase newMatchPhase) {
+  e_MatchPhase oldMatchPhase = matchPhase;
+  if (oldMatchPhase != newMatchPhase) {
+    RecordSoccerReplayPhaseEnd(oldMatchPhase);
+  }
+
   matchPhase = newMatchPhase;
   if (matchPhase == e_MatchPhase_1stHalf)           matchTime_ms = 0;
   else if (matchPhase == e_MatchPhase_2ndHalf)      matchTime_ms = 2700000;
   else if (matchPhase == e_MatchPhase_1stExtraTime) matchTime_ms = 5400000;
   else if (matchPhase == e_MatchPhase_2ndExtraTime) matchTime_ms = 6300000;
   else if (matchPhase == e_MatchPhase_Penalties)    matchTime_ms = 7200000;
+
+  if (oldMatchPhase != newMatchPhase) {
+    RecordSoccerReplayPhaseStart(matchPhase);
+  }
 
   if (matchPhase == e_MatchPhase_2ndHalf) {
     teams[0]->RelaxFatigue(0.05f);
@@ -703,7 +760,116 @@ signed int Match::GetBestPossessionTeamID() {
 }
 
 void Match::GameOver() {
+  if (!datasetGameOverRecorded) {
+    RecordSoccerReplayPhaseEnd(matchPhase);
+    FlushSoccerReplayExporter();
+    datasetGameOverRecorded = true;
+  }
   gameOver = true;
+}
+
+void Match::InitializeSoccerReplayExporter() {
+  if (!GetConfiguration()->GetBool("dataset_export_enabled", true)) return;
+
+  const std::string defaultOutputRoot = "output/datasets/soccerreplay1988";
+  const std::string outputRoot = GetConfiguration()->Get("dataset_export_root", defaultOutputRoot);
+  datasetExporter.reset(new dataset::soccerreplay1988::SoccerReplayExporter(matchData, outputRoot));
+
+  if (datasetExporter && datasetExporter->IsEnabled()) {
+    datasetExporter->SetScore(matchData->GetGoalCount(0), matchData->GetGoalCount(1));
+    datasetExporter->Flush();
+  }
+}
+
+void Match::FlushSoccerReplayExporter() {
+  if (!datasetExporter || !datasetExporter->IsEnabled()) return;
+
+  datasetExporter->SetScore(matchData->GetGoalCount(0), matchData->GetGoalCount(1));
+  datasetExporter->Flush();
+}
+
+void Match::RecordSoccerReplayPhaseStart(e_MatchPhase phase) {
+  if (!datasetExporter || !datasetExporter->IsEnabled()) return;
+  if (!IsSoccerReplayMainPhase(phase)) return;
+
+  dataset::soccerreplay1988::EventDescription eventDescription;
+  eventDescription.half = GetSoccerReplayHalf(phase);
+  eventDescription.time_stamp = "00:00";
+  eventDescription.comments_type = dataset::soccerreplay1988::labels::StartOfGameHalf;
+  eventDescription.comments_text = "Start of " + PhaseName(phase) + ".";
+  eventDescription.comments_text_anonymized = "Start of " + PhaseName(phase) + ".";
+
+  datasetExporter->RecordEvent(eventDescription);
+  datasetExporter->Flush();
+}
+
+void Match::RecordSoccerReplayPhaseEnd(e_MatchPhase phase) {
+  if (!datasetExporter || !datasetExporter->IsEnabled()) return;
+  if (!IsSoccerReplayMainPhase(phase)) return;
+
+  dataset::soccerreplay1988::EventDescription eventDescription;
+  eventDescription.half = GetSoccerReplayHalf(phase);
+  eventDescription.time_stamp = FormatSoccerReplayTimeStamp(matchTime_ms, phase);
+  eventDescription.comments_type = dataset::soccerreplay1988::labels::EndOfGameHalf;
+  eventDescription.comments_text = "End of " + PhaseName(phase) + ".";
+  eventDescription.comments_text_anonymized = "End of " + PhaseName(phase) + ".";
+
+  datasetExporter->RecordHalfEndOnce(PhaseName(phase), eventDescription);
+  datasetExporter->Flush();
+}
+
+void Match::RecordSoccerReplayGoal(bool ownGoal) {
+  if (!datasetExporter || !datasetExporter->IsEnabled()) return;
+  if (!IsSoccerReplayMainPhase(matchPhase)) return;
+
+  const int scoringTeamID = GetLastGoalTeamID();
+  const std::string teamName = matchData->GetTeamData(scoringTeamID)->GetName();
+  std::string playerName = "";
+  if (lastGoalScorer && lastGoalScorer->GetPlayerData()) {
+    playerName = lastGoalScorer->GetPlayerData()->GetFirstName() + " " + lastGoalScorer->GetPlayerData()->GetLastName();
+  }
+
+  dataset::soccerreplay1988::EventDescription eventDescription;
+  eventDescription.half = GetSoccerReplayHalf(matchPhase);
+  eventDescription.time_stamp = FormatSoccerReplayTimeStamp(matchTime_ms, matchPhase);
+  eventDescription.comments_type = ownGoal ? dataset::soccerreplay1988::labels::OwnGoal : dataset::soccerreplay1988::labels::Goal;
+
+  if (ownGoal) {
+    eventDescription.comments_text = playerName.empty() ? "Own goal for " + teamName + "." : "Own goal by " + playerName + " for " + teamName + ".";
+    eventDescription.comments_text_anonymized = playerName.empty() ? "Own goal for [TEAM]." : "Own goal by [PLAYER] for [TEAM].";
+  } else {
+    eventDescription.comments_text = playerName.empty() ? "Goal for " + teamName + "." : "Goal for " + teamName + " by " + playerName + ".";
+    eventDescription.comments_text_anonymized = playerName.empty() ? "Goal for [TEAM]." : "Goal for [TEAM] by [PLAYER].";
+  }
+
+  datasetExporter->SetScore(matchData->GetGoalCount(0), matchData->GetGoalCount(1));
+  datasetExporter->RecordEvent(eventDescription);
+  datasetExporter->Flush();
+}
+
+void Match::RecordSoccerReplayPossession() {
+  if (!datasetExporter || !datasetExporter->IsEnabled()) return;
+  if (!IsSoccerReplayMainPhase(matchPhase)) return;
+  if (!IsInPlay() || IsInSetPiece()) return;
+
+  const int possessionTeamID = GetBestPossessionTeamID();
+  if (possessionTeamID < 0 || possessionTeamID == datasetLastPossessionTeamID) return;
+  if (datasetLastPossessionTeamID != -1 && actualTime_ms < datasetLastPossessionEventTime_ms + 5000) return;
+
+  const std::string teamName = matchData->GetTeamData(possessionTeamID)->GetName();
+
+  dataset::soccerreplay1988::EventDescription eventDescription;
+  eventDescription.half = GetSoccerReplayHalf(matchPhase);
+  eventDescription.time_stamp = FormatSoccerReplayTimeStamp(matchTime_ms, matchPhase);
+  eventDescription.comments_type = dataset::soccerreplay1988::labels::BallPossession;
+  eventDescription.comments_text = teamName + " controls possession.";
+  eventDescription.comments_text_anonymized = "[TEAM] controls possession.";
+
+  if (datasetExporter->RecordEvent(eventDescription)) {
+    datasetLastPossessionTeamID = possessionTeamID;
+    datasetLastPossessionEventTime_ms = actualTime_ms;
+    datasetExporter->Flush();
+  }
 }
 
 void Match::GetCameraParams(float &zoom, float &height, float &fov, float &angleFactor) {
@@ -965,6 +1131,7 @@ void Match::Process() {
     if (IsGoalScored()) goalScoredTimer += 10; else goalScoredTimer = 0;
 
     if (IsInPlay() && !IsInSetPiece()) GetMatchData()->AddPossessionTime_10ms(designatedPossessionPlayer->GetTeamID());
+    RecordSoccerReplayPossession();
 
 
     // check for goals
@@ -1011,6 +1178,8 @@ void Match::Process() {
             SpamMessage("It's an OWN GOAL! oh noes!", 4000);
           }
         }
+
+        RecordSoccerReplayGoal(ownGoal);
 
       }
     }
