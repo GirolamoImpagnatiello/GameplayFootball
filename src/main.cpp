@@ -269,7 +269,10 @@ class ThreadHudThread : public Thread {
 };
 
 
-int main(int argc, const char** argv) {
+#if defined(_WIN32) && !defined(__MINGW32__)
+extern "C"
+#endif
+int main(int argc, char **argv) {
 
   config = new Properties();
   if (argc > 1) configFile = argv[1];

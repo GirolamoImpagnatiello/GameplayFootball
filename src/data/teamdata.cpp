@@ -132,7 +132,7 @@ TeamData::TeamData(int teamDatabaseID) : databaseID(teamDatabaseID) {
 
   while (changed && iterations < maxIterations) {
 
-    Vector3 offset[playerNum];
+    std::vector<Vector3> offset(playerNum);
 
     changed = false;
     for (int p1 = 0; p1 < playerNum - 1; p1++) {

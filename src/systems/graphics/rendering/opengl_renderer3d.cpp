@@ -23,6 +23,7 @@
 #include <OpenGL/gl3ext.h>
 #else
 #include <GL/gl.h>
+#include <GL/glext.h>
 //#include <GL/glcorearb.h>  // can be used to check for core profile only
 #endif
 
@@ -466,8 +467,11 @@ struct GLfunctions {
 #endif
 
 #ifdef WIN32
-    bool success = false;//wglSwapIntervalEXT(-1);
-    if (!success) wglSwapIntervalEXT(1);
+    typedef BOOL(WINAPI *WGLSwapIntervalEXTProc)(int);
+    WGLSwapIntervalEXTProc wglSwapIntervalEXT =
+        reinterpret_cast<WGLSwapIntervalEXTProc>(SDL_GL_GetProcAddress("wglSwapIntervalEXT"));
+    bool success = false;
+    if (wglSwapIntervalEXT) success = wglSwapIntervalEXT(1) == TRUE;
     //if (!success) printf("ANTI TEAR NOT SUPPORTED\n\n\n\n\n");
 #endif
 
@@ -1769,11 +1773,11 @@ struct GLfunctions {
   // render targets
 
   void OpenGLRenderer3D::SetRenderTargets(std::vector<e_TargetAttachment> targetAttachments) {
-    GLenum targets[targetAttachments.size()];
+    std::vector<GLenum> targets(targetAttachments.size());
     for (int i = 0; i < (signed int)targetAttachments.size(); i++) {
       targets[i] = GetGLTargetAttachment(targetAttachments.at(i));
     }
-    mapping.glDrawBuffers(targetAttachments.size(), targets);
+    mapping.glDrawBuffers(targetAttachments.size(), targets.data());
   }
 
 
@@ -1847,8 +1851,8 @@ struct GLfunctions {
     if (!usePrecalculatedSet || kernelSize != 32) {
       unsigned int candidateSize = 32;
 
-      Vector3 samples[kernelSize];
-      Vector3 candidates[candidateSize];
+      std::vector<Vector3> samples(kernelSize);
+      std::vector<Vector3> candidates(candidateSize);
 
       for (unsigned int i = 0; i < kernelSize; i++) {
 
@@ -1908,7 +1912,7 @@ struct GLfunctions {
 
     } else { // PRECALCULATED SET
 
-      Vector3 samples[kernelSize];
+      std::vector<Vector3> samples(kernelSize);
 
       // these samples seem relatively close to z = 0 (much 'ground effect' on flat surface)
       samples[0].Set(-0.164502, 0.198563, 0.847836);
@@ -2048,9 +2052,9 @@ struct GLfunctions {
 
       unsigned int kernelSize = 32;
       //SetUniformInt("ambient", "SSAO_kernelSize", kernelSize);
-      float SSAO_kernel[kernelSize * 3];
-      GeneratePoissonKernel(&SSAO_kernel[0], kernelSize);
-      SetUniformFloat3Array("ambient", "SSAO_kernel", kernelSize, &SSAO_kernel[0]);
+      std::vector<float> SSAO_kernel(kernelSize * 3);
+      GeneratePoissonKernel(SSAO_kernel.data(), kernelSize);
+      SetUniformFloat3Array("ambient", "SSAO_kernel", kernelSize, SSAO_kernel.data());
     }
     if (name == "lighting") {
       // on (at least older) nvidia cards, we can't 'skip' id's, or so it seems. so make them consecutive

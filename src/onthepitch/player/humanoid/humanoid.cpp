@@ -1,4 +1,4 @@
-﻿// Copyright 2019 Google LLC & Bastiaan Konings
+// Copyright 2019 Google LLC & Bastiaan Konings
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -2055,7 +2055,7 @@ signed int Humanoid::GetBestCheatableAnimID(const DataSet &sortedDataSet, bool u
     boost::shared_ptr<FootballAnimationExtension> footballExtension = boost::static_pointer_cast<FootballAnimationExtension>(anim->GetExtension("football"));
 
     int totalTouches = footballExtension->GetTouchCount();
-    int touchIDs[totalTouches];
+    std::vector<int> touchIDs(totalTouches);
     int count = 0;
 
     int defaultTouchFrame = atoi(anim->GetVariable("touchframe").c_str());
