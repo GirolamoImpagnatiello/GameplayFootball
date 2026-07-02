@@ -64,6 +64,23 @@ namespace blunted {
 
   };
 
+  class Renderer3DMessage_SaveBackBuffer : public Command {
+
+    public:
+      Renderer3DMessage_SaveBackBuffer(const std::string &filename) : Command("r3dmsg_SaveBackBuffer"), filename(filename), success(false) {};
+
+      bool success;
+
+    protected:
+      virtual bool Execute(void *caller = NULL) {
+        success = static_cast<Renderer3D*>(caller)->SaveBackBuffer(filename);
+        return true;
+      }
+
+      std::string filename;
+
+  };
+
   class Renderer3DMessage_CreateTexture : public Command {
 
     public:

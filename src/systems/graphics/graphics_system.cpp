@@ -105,4 +105,16 @@ namespace blunted {
     return overlay2DQueue;
   }
 
+  void GraphicsSystem::RequestBackBufferSave(const std::string &filename) {
+    boost::mutex::scoped_lock lock(backBufferSaveMutex);
+    backBufferSaveRequests.push_back(filename);
+  }
+
+  std::vector<std::string> GraphicsSystem::FetchBackBufferSaveRequests() {
+    boost::mutex::scoped_lock lock(backBufferSaveMutex);
+    std::vector<std::string> result = backBufferSaveRequests;
+    backBufferSaveRequests.clear();
+    return result;
+  }
+
 }

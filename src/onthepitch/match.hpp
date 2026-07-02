@@ -247,6 +247,7 @@ class Match {
     void RecordSoccerReplayPhaseEnd(e_MatchPhase phase);
     void RecordSoccerReplayGoal(bool ownGoal);
     void RecordSoccerReplayPossession();
+    void ScheduleSoccerReplayFrameDump();
 
     void PrepareGoalNetting();
     void UpdateGoalNetting(bool ballTouchesNet = false);
@@ -329,6 +330,8 @@ class Match {
     std::unique_ptr<dataset::soccerreplay1988::SoccerReplayExporter> datasetExporter;
     int datasetLastPossessionTeamID;
     unsigned long datasetLastPossessionEventTime_ms;
+    int datasetLastFrameHalf;
+    int datasetLastFrameSecond;
     bool datasetGameOverRecorded;
 
     // camera

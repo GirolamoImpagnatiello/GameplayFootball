@@ -168,6 +168,13 @@ namespace blunted {
     TaskManager *taskManager = TaskManager::GetInstancePtr();
     Renderer3D *renderer3D = graphicsSystem->GetRenderer3D();
 
+    std::vector<std::string> backBufferSaveRequests = graphicsSystem->FetchBackBufferSaveRequests();
+    for (unsigned int i = 0; i < backBufferSaveRequests.size(); ++i) {
+      boost::intrusive_ptr<Renderer3DMessage_SaveBackBuffer> saveBackBuffer(new Renderer3DMessage_SaveBackBuffer(backBufferSaveRequests[i]));
+      renderer3D->messageQueue.PushMessage(saveBackBuffer, true);
+      saveBackBuffer->Wait();
+    }
+
     // swap the buffers and stare in awe
     swapBuffers = new Renderer3DMessage_SwapBuffers();
     renderer3D->messageQueue.PushMessage(swapBuffers, true);

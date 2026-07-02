@@ -27,8 +27,10 @@
 //#include <GL/glcorearb.h>  // can be used to check for core profile only
 #endif
 
+#include <algorithm>
 #include <cmath>
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 
 #include "base/log.hpp"
 #include "managers/environmentmanager.hpp"
@@ -1803,6 +1805,32 @@ struct GLfunctions {
     width = context_width;
     height = context_height;
     bpp = context_bpp;
+  }
+
+  bool OpenGLRenderer3D::SaveBackBuffer(const std::string &filename) {
+    if (!contextIsActive) return false;
+    if (context_width <= 0 || context_height <= 0) return false;
+
+    std::vector<unsigned char> pixels(context_width * context_height * 4);
+    std::vector<unsigned char> flipped(context_width * context_height * 4);
+
+    glReadBuffer(GL_BACK);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, context_width, context_height, GL_RGBA, GL_UNSIGNED_BYTE, &pixels[0]);
+
+    const int stride = context_width * 4;
+    for (int y = 0; y < context_height; ++y) {
+      const unsigned char *src = &pixels[(context_height - y - 1) * stride];
+      unsigned char *dst = &flipped[y * stride];
+      std::copy(src, src + stride, dst);
+    }
+
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(&flipped[0], context_width, context_height, 32, stride, SDL_PIXELFORMAT_RGBA32);
+    if (!surface) return false;
+
+    const bool success = IMG_SavePNG(surface, filename.c_str()) == 0;
+    SDL_FreeSurface(surface);
+    return success;
   }
 
   void OpenGLRenderer3D::SetPolygonOffset(float scale, float bias) {

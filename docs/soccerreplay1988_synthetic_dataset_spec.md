@@ -223,9 +223,28 @@ dataset_export_root=output/datasets/soccerreplay1988
 Default output:
 
 ```text
-output/datasets/soccerreplay1988/match_YYYYMMDD_HHMMSS/annotations.json
+output/datasets/soccerreplay1988/match_YYYYMMDD_HHMMSS/
+  annotations.json
+  frame_index.json
+  frames/
+    frame_000001.png
+    frame_000002.png
 ```
 
-The baseline writes only the SoccerReplay-style annotation JSON. Video files,
-frame dumps, and MatchVision/Unisoccer frame indexes should be added as sidecar
-artifacts in the next implementation step.
+`annotations.json` keeps the SoccerReplay-style schema only. Frame metadata is
+stored in `frame_index.json` as a sidecar artifact.
+
+Frame dump rules:
+
+- Capture rendered framebuffer PNGs at 1 fps in match time.
+- Use 30-second/30-frame event windows in `frame_index.json`.
+- Keep the event time inside the selected window.
+- Shift the window near half boundaries when the centered 30-second window is
+  not available.
+
+Validation:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\validate_synthetic_dataset.ps1 `
+  -MatchDirectory out\build-vs2026-x86\output\datasets\soccerreplay1988\match_YYYYMMDD_HHMMSS
+```

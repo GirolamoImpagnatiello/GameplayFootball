@@ -100,10 +100,13 @@ static std::string FormatNow(const char *format) {
 SoccerReplayExporter::SoccerReplayExporter(MatchData *matchData, const std::string &outputRoot) : enabled(false) {
   std::string safeOutputRoot = outputRoot.empty() ? "output/datasets/soccerreplay1988" : outputRoot;
   outputDirectory = (boost::filesystem::path(safeOutputRoot) / ("match_" + FormatNow("%Y%m%d_%H%M%S"))).string();
+  framesDirectory = (boost::filesystem::path(outputDirectory) / "frames").string();
   annotationsFilename = (boost::filesystem::path(outputDirectory) / "annotations.json").string();
+  frameIndexFilename = (boost::filesystem::path(outputDirectory) / "frame_index.json").string();
 
   try {
     boost::filesystem::create_directories(outputDirectory);
+    boost::filesystem::create_directories(framesDirectory);
     enabled = true;
   } catch (...) {
     enabled = false;
@@ -157,7 +160,35 @@ bool SoccerReplayExporter::RecordHalfEndOnce(const std::string &phaseKey, const 
   return RecordEvent(eventDescription);
 }
 
+std::string SoccerReplayExporter::BuildFrameFilename(int frameNumber) const {
+  std::ostringstream filename;
+  filename << "frame_" << std::setfill('0') << std::setw(6) << frameNumber << ".png";
+  return filename.str();
+}
+
+std::string SoccerReplayExporter::RegisterFrameDump(int half, const std::string &timeStamp, unsigned long matchTime_ms, unsigned long actualTime_ms) {
+  if (!enabled) return "";
+
+  FrameDumpRecord frameDumpRecord;
+  frameDumpRecord.frame_number = static_cast<int>(frameDumpRecords.size()) + 1;
+  frameDumpRecord.half = half;
+  frameDumpRecord.time_stamp = timeStamp;
+  frameDumpRecord.file = "frames/" + BuildFrameFilename(frameDumpRecord.frame_number);
+  frameDumpRecord.match_time_ms = matchTime_ms;
+  frameDumpRecord.actual_time_ms = actualTime_ms;
+  frameDumpRecords.push_back(frameDumpRecord);
+
+  return (boost::filesystem::path(outputDirectory) / frameDumpRecord.file).string();
+}
+
 bool SoccerReplayExporter::Flush() {
+  if (!enabled) return false;
+  const bool annotationsOk = FlushAnnotations();
+  const bool frameIndexOk = FlushFrameIndex();
+  return annotationsOk && frameIndexOk;
+}
+
+bool SoccerReplayExporter::FlushAnnotations() {
   if (!enabled) return false;
 
   std::ofstream output(annotationsFilename.c_str(), std::ios::out | std::ios::trunc);
@@ -207,6 +238,104 @@ bool SoccerReplayExporter::Flush() {
     output << "      \"comments_text\": " << Quote(eventDescription.comments_text) << ",\n";
     output << "      \"comments_text_anonymized\": " << Quote(eventDescription.comments_text_anonymized) << "\n";
     output << "    }" << (i + 1 == eventDescriptions.size() ? "\n" : ",\n");
+  }
+  output << "  ]\n";
+  output << "}\n";
+
+  return true;
+}
+
+bool SoccerReplayExporter::FlushFrameIndex() {
+  if (!enabled) return false;
+
+  std::ofstream output(frameIndexFilename.c_str(), std::ios::out | std::ios::trunc);
+  if (!output.is_open()) return false;
+
+  output << "{\n";
+  output << "  \"fps\": 1,\n";
+  output << "  \"window_duration_seconds\": 30,\n";
+  output << "  \"frame_directory\": \"frames\",\n";
+  output << "  \"frames\": [\n";
+  for (std::size_t i = 0; i < frameDumpRecords.size(); ++i) {
+    const FrameDumpRecord &frame = frameDumpRecords[i];
+    output << "    {\n";
+    output << "      \"frame_number\": " << frame.frame_number << ",\n";
+    output << "      \"file\": " << Quote(frame.file) << ",\n";
+    output << "      \"half\": " << frame.half << ",\n";
+    output << "      \"time_stamp\": " << Quote(frame.time_stamp) << ",\n";
+    output << "      \"match_time_ms\": " << frame.match_time_ms << ",\n";
+    output << "      \"actual_time_ms\": " << frame.actual_time_ms << "\n";
+    output << "    }" << (i + 1 == frameDumpRecords.size() ? "\n" : ",\n");
+  }
+  output << "  ],\n";
+
+  output << "  \"events\": [\n";
+  for (std::size_t eventIndex = 0; eventIndex < eventDescriptions.size(); ++eventIndex) {
+    const EventDescription &eventDescription = eventDescriptions[eventIndex];
+    std::vector<std::size_t> halfFrameIndexes;
+    for (std::size_t frameIndex = 0; frameIndex < frameDumpRecords.size(); ++frameIndex) {
+      if (frameDumpRecords[frameIndex].half == eventDescription.half) halfFrameIndexes.push_back(frameIndex);
+    }
+
+    int frameCenter = 0;
+    int frameStart = 0;
+    int frameEnd = 0;
+    int frameCount = 0;
+    unsigned long windowStart_ms = eventDescription.match_time_ms;
+    unsigned long windowEnd_ms = eventDescription.match_time_ms;
+    bool eventInsideWindow = false;
+
+    if (!halfFrameIndexes.empty()) {
+      std::size_t closestHalfFrame = 0;
+      unsigned long closestDistance = static_cast<unsigned long>(-1);
+      for (std::size_t i = 0; i < halfFrameIndexes.size(); ++i) {
+        const FrameDumpRecord &frame = frameDumpRecords[halfFrameIndexes[i]];
+        const unsigned long distance = frame.match_time_ms > eventDescription.match_time_ms ?
+          frame.match_time_ms - eventDescription.match_time_ms :
+          eventDescription.match_time_ms - frame.match_time_ms;
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestHalfFrame = i;
+        }
+      }
+
+      int startHalfFrame = static_cast<int>(closestHalfFrame) - 15;
+      if (startHalfFrame < 0) startHalfFrame = 0;
+      if (startHalfFrame + 29 >= static_cast<int>(halfFrameIndexes.size())) {
+        startHalfFrame = static_cast<int>(halfFrameIndexes.size()) - 30;
+        if (startHalfFrame < 0) startHalfFrame = 0;
+      }
+      int endHalfFrame = startHalfFrame + 29;
+      if (endHalfFrame >= static_cast<int>(halfFrameIndexes.size())) endHalfFrame = static_cast<int>(halfFrameIndexes.size()) - 1;
+
+      const FrameDumpRecord &centerFrame = frameDumpRecords[halfFrameIndexes[closestHalfFrame]];
+      const FrameDumpRecord &startFrame = frameDumpRecords[halfFrameIndexes[startHalfFrame]];
+      const FrameDumpRecord &endFrame = frameDumpRecords[halfFrameIndexes[endHalfFrame]];
+      frameCenter = centerFrame.frame_number;
+      frameStart = startFrame.frame_number;
+      frameEnd = endFrame.frame_number;
+      frameCount = frameEnd - frameStart + 1;
+      windowStart_ms = startFrame.match_time_ms;
+      windowEnd_ms = endFrame.match_time_ms;
+      eventInsideWindow = eventDescription.match_time_ms >= windowStart_ms && eventDescription.match_time_ms <= windowEnd_ms;
+    }
+
+    output << "    {\n";
+    output << "      \"event_id\": " << eventIndex << ",\n";
+    output << "      \"half\": " << eventDescription.half << ",\n";
+    output << "      \"comments_type\": " << Quote(eventDescription.comments_type) << ",\n";
+    output << "      \"time_stamp\": " << Quote(eventDescription.time_stamp) << ",\n";
+    output << "      \"event_match_time_ms\": " << eventDescription.match_time_ms << ",\n";
+    output << "      \"fps\": 1,\n";
+    output << "      \"window_duration_seconds\": 30,\n";
+    output << "      \"frame_center\": " << frameCenter << ",\n";
+    output << "      \"frame_start\": " << frameStart << ",\n";
+    output << "      \"frame_end\": " << frameEnd << ",\n";
+    output << "      \"frame_count\": " << frameCount << ",\n";
+    output << "      \"window_start_match_time_ms\": " << windowStart_ms << ",\n";
+    output << "      \"window_end_match_time_ms\": " << windowEnd_ms << ",\n";
+    output << "      \"event_inside_window\": " << (eventInsideWindow ? "true" : "false") << "\n";
+    output << "    }" << (eventIndex + 1 == eventDescriptions.size() ? "\n" : ",\n");
   }
   output << "  ]\n";
   output << "}\n";

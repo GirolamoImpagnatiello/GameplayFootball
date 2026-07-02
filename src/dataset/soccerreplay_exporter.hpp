@@ -42,16 +42,27 @@ struct PlayerInformation {
   std::string market_value;
 };
 
+struct FrameDumpRecord {
+  int frame_number;
+  int half;
+  std::string time_stamp;
+  std::string file;
+  unsigned long match_time_ms;
+  unsigned long actual_time_ms;
+};
+
 class SoccerReplayExporter {
   public:
     SoccerReplayExporter(MatchData *matchData, const std::string &outputRoot);
 
     bool IsEnabled() const { return enabled; }
     const std::string &GetOutputDirectory() const { return outputDirectory; }
+    const std::string &GetFramesDirectory() const { return framesDirectory; }
 
     void SetScore(int homeGoals, int awayGoals);
     bool RecordEvent(const EventDescription &eventDescription);
     bool RecordHalfEndOnce(const std::string &phaseKey, const EventDescription &eventDescription);
+    std::string RegisterFrameDump(int half, const std::string &timeStamp, unsigned long matchTime_ms, unsigned long actualTime_ms);
     bool Flush();
 
   private:
@@ -59,15 +70,21 @@ class SoccerReplayExporter {
     void AddTeamPlayers(const TeamData *teamData);
     std::string BuildFormationString(const TeamData *teamData) const;
     std::string BuildShortPlayerName(const PlayerData *playerData) const;
+    bool FlushAnnotations();
+    bool FlushFrameIndex();
+    std::string BuildFrameFilename(int frameNumber) const;
 
     MatchInformation matchInformation;
     RefereeInformation refereeInformation;
     std::vector<PlayerInformation> playerInformation;
     std::vector<EventDescription> eventDescriptions;
+    std::vector<FrameDumpRecord> frameDumpRecords;
     std::set<std::string> closedPhaseKeys;
 
     std::string outputDirectory;
+    std::string framesDirectory;
     std::string annotationsFilename;
+    std::string frameIndexFilename;
     bool enabled;
 };
 

@@ -51,6 +51,8 @@ namespace blunted {
       int GetAverageFrameTime_ms(unsigned int frameCount) const { assert(task); return task->GetAverageFrameTime_ms(frameCount); };
       unsigned long GetLastSwapTime_ms() const { assert(task); return task->GetLastSwapTime_ms(); }
       int GetTimeSinceLastSwap_ms() const { assert(task); return task->GetTimeSinceLastSwap_ms(); }
+      void RequestBackBufferSave(const std::string &filename);
+      std::vector<std::string> FetchBackBufferSaveRequests();
 
       virtual std::string GetName() const { return "graphics"; }
 
@@ -67,6 +69,8 @@ namespace blunted {
       boost::shared_ptr < ResourceManager<VertexBuffer> > vertexBufferResourceManager;
 
       MessageQueue<Overlay2DQueueEntry> overlay2DQueue;
+      boost::mutex backBufferSaveMutex;
+      std::vector<std::string> backBufferSaveRequests;
 
       int width, height, bpp;
 
