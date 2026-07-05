@@ -29,6 +29,9 @@
 #include "menu/pagefactory.hpp"
 #include "menu/startmatch/loadingmatch.hpp"
 
+#include <boost/filesystem.hpp>
+#include <algorithm>
+#include <ctime>
 #include <iomanip>
 #include <sstream>
 
@@ -74,6 +77,43 @@ std::string PhaseName(e_MatchPhase phase) {
   return "half";
 }
 
+std::string FormatNow(const char *format) {
+  std::time_t now = std::time(0);
+  std::tm localNow;
+#ifdef _WIN32
+  localtime_s(&localNow, &now);
+#else
+  localtime_r(&now, &localNow);
+#endif
+  char buffer[64];
+  std::strftime(buffer, sizeof(buffer), format, &localNow);
+  return std::string(buffer);
+}
+
+std::string FormatCosmosFrameFilename(int frameNumber) {
+  std::ostringstream filename;
+  filename << "frame_" << std::setfill('0') << std::setw(6) << frameNumber << ".png";
+  return filename.str();
+}
+
+std::string JsonEscape(const std::string &value) {
+  std::ostringstream result;
+  for (std::string::const_iterator iter = value.begin(); iter != value.end(); ++iter) {
+    const char c = *iter;
+    if (c == '\\') result << "\\\\";
+    else if (c == '"') result << "\\\"";
+    else if (c == '\n') result << "\\n";
+    else if (c == '\r') result << "\\r";
+    else if (c == '\t') result << "\\t";
+    else result << c;
+  }
+  return result.str();
+}
+
+std::string Quote(const std::string &value) {
+  return "\"" + JsonEscape(value) + "\"";
+}
+
 }
 
 Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) : matchData(matchData), controllers(controllers) {
@@ -86,6 +126,14 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   datasetLastFrameHalf = 0;
   datasetLastFrameSecond = -1;
   datasetGameOverRecorded = false;
+  cosmosCaptureEnabled = false;
+  cosmosCaptureComplete = false;
+  cosmosCaptureFps = 30;
+  cosmosCaptureTargetFrames = 121;
+  cosmosCaptureSkipFrames = 0;
+  cosmosCaptureFrameCount = 0;
+  cosmosCaptureLastFrameBucket = -1;
+  cosmosCaptureStartActualTime_ms = 0;
 
   // shared ptr to menutask, because menutask shouldn't die before match does
   menuTask = GetMenuTask();
@@ -334,6 +382,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   bestPossessionTeamID = -1;
   matchPhase = e_MatchPhase_PreMatch;
   InitializeSoccerReplayExporter();
+  InitializeCosmosCaptureExporter();
   SetMatchPhase(e_MatchPhase_PreMatch);
 
   gameSequenceInfo = GetScheduler()->GetTaskSequenceInfo("game");
@@ -461,6 +510,7 @@ void Match::Exit() {
   if (Verbose()) printf("exiting match.. ");
 
   FlushSoccerReplayExporter();
+  FlushCosmosCaptureMetadata();
 
   if (Verbose()) printf("\nscene3D tree before match Exit():\n");
   if (Verbose()) scene3D->PrintTree();
@@ -771,6 +821,7 @@ void Match::GameOver() {
   if (!datasetGameOverRecorded) {
     RecordSoccerReplayPhaseEnd(matchPhase);
     FlushSoccerReplayExporter();
+    FlushCosmosCaptureMetadata();
     datasetGameOverRecorded = true;
   }
   gameOver = true;
@@ -906,6 +957,127 @@ void Match::ScheduleSoccerReplayFrameDump() {
   datasetLastFrameSecond = halfSecond;
 
   GetGraphicsSystem()->RequestBackBufferSave(frameFilename);
+}
+
+void Match::InitializeCosmosCaptureExporter() {
+  cosmosCaptureEnabled = GetConfiguration()->GetBool("cosmos_capture_enabled", false);
+  if (!cosmosCaptureEnabled) return;
+
+  cosmosCaptureFps = clamp(GetConfiguration()->GetInt("cosmos_capture_fps", 30), 1, 120);
+  cosmosCaptureTargetFrames = std::max(1, GetConfiguration()->GetInt("cosmos_capture_frame_count", 121));
+  cosmosCaptureSkipFrames = std::max(0, GetConfiguration()->GetInt("cosmos_capture_skip_frames", 0));
+  cosmosCaptureFrameCount = 0;
+  cosmosCaptureLastFrameBucket = -1;
+  cosmosCaptureStartActualTime_ms = 0;
+  cosmosCaptureComplete = false;
+
+  const std::string defaultOutputRoot = "output/cosmos_transfer";
+  const std::string outputRoot = GetConfiguration()->Get("cosmos_capture_root", defaultOutputRoot);
+  cosmosCaptureDirectory = (boost::filesystem::path(outputRoot) / ("capture_" + FormatNow("%Y%m%d_%H%M%S"))).string();
+  cosmosRgbDirectory = (boost::filesystem::path(cosmosCaptureDirectory) / "rgb").string();
+  cosmosDepthDirectory = (boost::filesystem::path(cosmosCaptureDirectory) / "depth").string();
+  cosmosSegmentationDirectory = (boost::filesystem::path(cosmosCaptureDirectory) / "seg").string();
+
+  try {
+    boost::filesystem::create_directories(cosmosRgbDirectory);
+    boost::filesystem::create_directories(cosmosDepthDirectory);
+    boost::filesystem::create_directories(cosmosSegmentationDirectory);
+  } catch (...) {
+    cosmosCaptureEnabled = false;
+    cosmosCaptureComplete = true;
+  }
+}
+
+void Match::ScheduleCosmosFrameCapture() {
+  if (!cosmosCaptureEnabled || cosmosCaptureComplete) return;
+  if (!IsSoccerReplayMainPhase(matchPhase)) return;
+  if (pause) return;
+
+  if (cosmosCaptureStartActualTime_ms == 0) cosmosCaptureStartActualTime_ms = fetchedbuf_actualTime_ms;
+  const unsigned long elapsed_ms = fetchedbuf_actualTime_ms - cosmosCaptureStartActualTime_ms;
+  const int frameBucket = static_cast<int>((elapsed_ms * static_cast<unsigned long>(cosmosCaptureFps)) / 1000);
+  if (frameBucket < cosmosCaptureSkipFrames) return;
+  if (frameBucket == cosmosCaptureLastFrameBucket) return;
+
+  cosmosCaptureLastFrameBucket = frameBucket;
+  cosmosCaptureFrameCount++;
+
+  const std::string frameFilename = FormatCosmosFrameFilename(cosmosCaptureFrameCount);
+  ControlFrameCaptureRequest request;
+  request.rgbFilename = (boost::filesystem::path(cosmosRgbDirectory) / frameFilename).string();
+  request.depthFilename = (boost::filesystem::path(cosmosDepthDirectory) / frameFilename).string();
+  request.segmentationFilename = (boost::filesystem::path(cosmosSegmentationDirectory) / frameFilename).string();
+  GetGraphicsSystem()->RequestControlFrameCapture(request);
+
+  if (cosmosCaptureFrameCount >= cosmosCaptureTargetFrames) {
+    cosmosCaptureComplete = true;
+    GetGraphicsSystem()->WaitForBackBufferSaves();
+    FlushCosmosCaptureMetadata();
+  }
+}
+
+void Match::FlushCosmosCaptureMetadata() {
+  if (!cosmosCaptureEnabled || cosmosCaptureDirectory.empty()) return;
+
+  const boost::filesystem::path captureRoot(cosmosCaptureDirectory);
+  const std::string prompt = GetConfiguration()->Get(
+    "cosmos_capture_prompt",
+    "A photorealistic broadcast soccer match in a modern stadium, realistic grass, players, ball, lighting and camera motion.");
+
+  {
+    std::ofstream promptFile((captureRoot / "prompt.json").string().c_str(), std::ios::out | std::ios::trunc);
+    if (promptFile.is_open()) {
+      promptFile << "{\n";
+      promptFile << "  \"prompt\": " << Quote(prompt) << "\n";
+      promptFile << "}\n";
+    }
+  }
+
+  {
+    std::ofstream spec((captureRoot / "cosmos_transfer_spec.json").string().c_str(), std::ios::out | std::ios::trunc);
+    if (spec.is_open()) {
+      spec << "{\n";
+      spec << "  \"name\": \"gameplayfootball_transfer_depth_seg\",\n";
+      spec << "  \"model_mode\": \"video2video\",\n";
+      spec << "  \"resolution\": \"720\",\n";
+      spec << "  \"aspect_ratio\": \"16,9\",\n";
+      spec << "  \"num_frames\": " << cosmosCaptureFrameCount << ",\n";
+      spec << "  \"fps\": " << cosmosCaptureFps << ",\n";
+      spec << "  \"shift\": 10.0,\n";
+      spec << "  \"num_steps\": 50,\n";
+      spec << "  \"seed\": 2026,\n";
+      spec << "  \"num_video_frames_per_chunk\": " << cosmosCaptureFrameCount << ",\n";
+      spec << "  \"num_conditional_frames\": 1,\n";
+      spec << "  \"num_first_chunk_conditional_frames\": 0,\n";
+      spec << "  \"share_vision_temporal_positions\": true,\n";
+      spec << "  \"negative_metadata_mode\": \"none\",\n";
+      spec << "  \"negative_prompt_keep_metadata\": false,\n";
+      spec << "  \"guidance\": 3.0,\n";
+      spec << "  \"control_guidance\": 2.0,\n";
+      spec << "  \"prompt_path\": \"prompt.json\",\n";
+      spec << "  \"depth\": { \"control_path\": \"control_depth.mp4\" },\n";
+      spec << "  \"seg\": { \"control_path\": \"control_seg.mp4\" }\n";
+      spec << "}\n";
+    }
+  }
+
+  {
+    std::ofstream metadata((captureRoot / "metadata.json").string().c_str(), std::ios::out | std::ios::trunc);
+    if (metadata.is_open()) {
+      metadata << "{\n";
+      metadata << "  \"fps\": " << cosmosCaptureFps << ",\n";
+      metadata << "  \"frame_count\": " << cosmosCaptureFrameCount << ",\n";
+      metadata << "  \"skip_frames\": " << cosmosCaptureSkipFrames << ",\n";
+      metadata << "  \"rgb_directory\": \"rgb\",\n";
+      metadata << "  \"depth_directory\": \"depth\",\n";
+      metadata << "  \"segmentation_directory\": \"seg\",\n";
+      metadata << "  \"rgb_video\": \"control_rgb.mp4\",\n";
+      metadata << "  \"depth_video\": \"control_depth.mp4\",\n";
+      metadata << "  \"segmentation_video\": \"control_seg.mp4\",\n";
+      metadata << "  \"cosmos_spec\": \"cosmos_transfer_spec.json\"\n";
+      metadata << "}\n";
+    }
+  }
 }
 
 void Match::GetCameraParams(float &zoom, float &height, float &fov, float &angleFactor) {
@@ -1513,6 +1685,7 @@ void Match::Put() {
     // replay
     CaptureReplayFrame(fetchedbuf_actualTime_ms + fetchedbuf_timeDelta);
     ScheduleSoccerReplayFrameDump();
+    ScheduleCosmosFrameCapture();
 
     if (GetDebugMode() == e_DebugMode_AI) GetDebugOverlay()->OnChange();
 

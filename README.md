@@ -126,6 +126,26 @@ cmake --build . --parallel --config Debug
 
 That's it! Run `gameplayfootball.exe` inside `build\Release` directory (or inside `build\Debug` for `Debug` version)
 
+## Cosmos video-to-video capture
+
+The simulator can export a short Cosmos Transfer capture with synchronized RGB, depth and segmentation PNG sequences. Add these optional keys to the config file used at startup:
+
+```txt
+"cosmos_capture_enabled" "true"
+"cosmos_capture_fps" "30"
+"cosmos_capture_frame_count" "121"
+"cosmos_capture_root" "output/cosmos_transfer"
+"cosmos_capture_prompt" "A photorealistic broadcast soccer match in a modern stadium, realistic grass, players, ball, lighting and camera motion."
+```
+
+When a match enters normal play, the capture is written under `output/cosmos_transfer/capture_YYYYMMDD_HHMMSS` with `rgb`, `depth`, `seg`, `metadata.json`, `prompt.json` and `cosmos_transfer_spec.json`.
+
+To build the three MP4 control videos after capture:
+
+```powershell
+.\tools\build_cosmos_capture_videos.ps1 -CaptureDirectory output\cosmos_transfer\capture_YYYYMMDD_HHMMSS
+```
+
 
 ## Problems? 
 If you have any problems please open an issue. 

@@ -51,7 +51,14 @@ namespace blunted {
     AABB aabb;
     Vector3 position;
     Quaternion rotation;
+    Vector3 semanticColor;
     // todo: think about this: int id_cache; // for quick access - getting resource's id needs mutexing and all
+  };
+
+  struct ControlFrameCaptureRequest {
+    std::string rgbFilename;
+    std::string depthFilename;
+    std::string segmentationFilename;
   };
 
   struct ShadowMap {
@@ -191,6 +198,7 @@ namespace blunted {
   enum e_RenderMode {
     e_RenderMode_GeometryOnly,
     e_RenderMode_Diffuse,
+    e_RenderMode_Semantic,
     e_RenderMode_Full
   };
 
@@ -302,6 +310,8 @@ namespace blunted {
       virtual float HDRGetOverallBrightness() = 0;
 
       virtual bool SaveBackBuffer(const std::string &filename) = 0;
+      virtual bool SaveDepthBuffer(const std::string &filename, int width, int height) = 0;
+      virtual bool SaveColorBuffer(const std::string &filename, e_TargetAttachment attachment, int width, int height) = 0;
       virtual void WaitForBackBufferSaves() = 0;
 
       void operator()() = 0;

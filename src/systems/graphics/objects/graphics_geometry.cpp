@@ -24,9 +24,40 @@
 
 #include "base/geometry/trianglemeshutils.hpp"
 
+#include <algorithm>
+#include <cctype>
+
 namespace blunted {
 
+  namespace {
+
+    std::string LowerString(std::string value) {
+      std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      return value;
+    }
+
+    bool Contains(const std::string &haystack, const std::string &needle) {
+      return haystack.find(needle) != std::string::npos;
+    }
+
+    Vector3 DetermineSemanticColor(boost::intrusive_ptr<Geometry> geometry) {
+      std::string source = LowerString(geometry->GetName());
+      if (geometry->GetGeometryData()) source += " " + LowerString(geometry->GetGeometryData()->GetIdentString());
+
+      if (Contains(source, "pitch") || Contains(source, "grass") || Contains(source, "floor")) return Vector3(0.10f, 0.65f, 0.18f);
+      if (Contains(source, "fullbody") || Contains(source, "player") || Contains(source, "official") || Contains(source, "referee") || Contains(source, "linesman")) return Vector3(0.12f, 0.35f, 0.95f);
+      if (Contains(source, "ball")) return Vector3(1.00f, 0.95f, 0.18f);
+      if (Contains(source, "goal") || Contains(source, "net") || Contains(source, "post")) return Vector3(0.85f, 0.85f, 0.85f);
+      if (Contains(source, "adboard") || Contains(source, "stadium") || Contains(source, "crowd")) return Vector3(0.55f, 0.45f, 0.75f);
+      if (Contains(source, "card")) return Vector3(1.00f, 0.55f, 0.05f);
+
+      return Vector3(0.45f, 0.45f, 0.45f);
+    }
+
+  }
+
   GraphicsGeometry::GraphicsGeometry(GraphicsScene *graphicsScene) : GraphicsObject(graphicsScene) {
+    semanticColor = Vector3(0.45f, 0.45f, 0.45f);
   }
 
   GraphicsGeometry::~GraphicsGeometry() {
@@ -59,6 +90,14 @@ namespace blunted {
 
   Quaternion GraphicsGeometry::GetRotation() const {
     return rotation;
+  }
+
+  void GraphicsGeometry::SetSemanticColor(const Vector3 &color) {
+    semanticColor = color;
+  }
+
+  Vector3 GraphicsGeometry::GetSemanticColor() const {
+    return semanticColor;
   }
 
 
@@ -160,6 +199,7 @@ namespace blunted {
     // todo: rewrite that indices/usesIndices thing, it's very unclear what's going on
 
     //printf("loading %s\n", geometry->GetName().c_str());
+    caller->SetSemanticColor(DetermineSemanticColor(geometry));
 
     boost::intrusive_ptr < Resource<GeometryData> > resource = geometry->GetGeometryData();
 
@@ -410,6 +450,7 @@ namespace blunted {
     queueEntry.vertexBuffer = caller->vertexBuffer;
     queueEntry.position = caller->GetPosition();
     queueEntry.rotation = caller->GetRotation();
+    queueEntry.semanticColor = caller->GetSemanticColor();
     queue.push_back(queueEntry);
   }
 

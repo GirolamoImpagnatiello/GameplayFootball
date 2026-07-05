@@ -184,6 +184,10 @@ namespace blunted {
 
   void GraphicsCamera_CameraInterpreter::OnPoke() {
 
+    if (caller->viewBuffer.captureRequests.empty()) {
+      caller->viewBuffer.captureRequests = caller->GetGraphicsScene()->GetGraphicsSystem()->FetchControlFrameCaptureRequests();
+    }
+
     boost::intrusive_ptr<Renderer3DMessage_RenderView> renderView(new Renderer3DMessage_RenderView(caller->viewID, caller->viewBuffer));
     caller->GetGraphicsScene()->GetGraphicsSystem()->GetRenderer3D()->messageQueue.PushMessage(renderView, true);
 

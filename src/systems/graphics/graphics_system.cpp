@@ -119,6 +119,18 @@ namespace blunted {
     return result;
   }
 
+  void GraphicsSystem::RequestControlFrameCapture(const ControlFrameCaptureRequest &request) {
+    boost::mutex::scoped_lock lock(controlFrameCaptureMutex);
+    controlFrameCaptureRequests.push_back(request);
+  }
+
+  std::vector<ControlFrameCaptureRequest> GraphicsSystem::FetchControlFrameCaptureRequests() {
+    boost::mutex::scoped_lock lock(controlFrameCaptureMutex);
+    std::vector<ControlFrameCaptureRequest> result = controlFrameCaptureRequests;
+    controlFrameCaptureRequests.clear();
+    return result;
+  }
+
   void GraphicsSystem::WaitForBackBufferSaves() {
     if (!renderer3DTask) return;
 

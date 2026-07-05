@@ -16,6 +16,7 @@ namespace blunted {
     std::deque<VertexBufferQueueEntry> visibleGeometry;
     std::deque<LightQueueEntry> visibleLights;
     std::deque<VertexBufferQueueEntry> skyboxes;
+    std::vector<ControlFrameCaptureRequest> captureRequests;
 
     Matrix4 cameraMatrix;
     float cameraFOV;

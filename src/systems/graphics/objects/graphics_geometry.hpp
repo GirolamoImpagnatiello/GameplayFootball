@@ -32,6 +32,8 @@ namespace blunted {
       Vector3 GetPosition() const;
       virtual void SetRotation(const Quaternion &newRotation);
       Quaternion GetRotation() const;
+      void SetSemanticColor(const Vector3 &color);
+      Vector3 GetSemanticColor() const;
 
       std::list<VertexBufferIndex> vertexBufferIndices;
       boost::intrusive_ptr < Resource<VertexBuffer> > vertexBuffer;
@@ -39,6 +41,7 @@ namespace blunted {
     protected:
       Vector3 position;
       Quaternion rotation;
+      Vector3 semanticColor;
 
   };
 

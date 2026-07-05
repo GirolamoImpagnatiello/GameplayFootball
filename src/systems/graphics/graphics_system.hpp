@@ -53,6 +53,8 @@ namespace blunted {
       int GetTimeSinceLastSwap_ms() const { assert(task); return task->GetTimeSinceLastSwap_ms(); }
       void RequestBackBufferSave(const std::string &filename);
       std::vector<std::string> FetchBackBufferSaveRequests();
+      void RequestControlFrameCapture(const ControlFrameCaptureRequest &request);
+      std::vector<ControlFrameCaptureRequest> FetchControlFrameCaptureRequests();
       void WaitForBackBufferSaves();
 
       virtual std::string GetName() const { return "graphics"; }
@@ -72,6 +74,8 @@ namespace blunted {
       MessageQueue<Overlay2DQueueEntry> overlay2DQueue;
       boost::mutex backBufferSaveMutex;
       std::vector<std::string> backBufferSaveRequests;
+      boost::mutex controlFrameCaptureMutex;
+      std::vector<ControlFrameCaptureRequest> controlFrameCaptureRequests;
 
       int width, height, bpp;
 

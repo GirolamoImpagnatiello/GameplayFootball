@@ -147,6 +147,49 @@ namespace blunted {
 
     renderer->RenderVertexBuffer(buffer.visibleGeometry, e_RenderMode_Full);
 
+    if (!buffer.captureRequests.empty()) {
+      for (std::size_t i = 0; i < buffer.captureRequests.size(); ++i) {
+        if (!buffer.captureRequests[i].depthFilename.empty()) {
+          renderer->SaveDepthBuffer(buffer.captureRequests[i].depthFilename, view.width, view.height);
+        }
+      }
+
+      renderer->UseShader("semantic");
+      renderer->SetMatrix("projectionMatrix", projectionMatrix);
+      renderer->SetMatrix("viewMatrix", viewMatrix);
+
+      targets.push_back(e_TargetAttachment_Color2);
+      renderer->SetRenderTargets(targets);
+      targets.clear();
+
+      renderer->SetCullingMode(e_CullingMode_Back);
+      renderer->SetBlendingMode(e_BlendingMode_Off);
+      renderer->SetDepthTesting(true);
+      renderer->SetDepthFunction(e_DepthFunction_LessOrEqual);
+      renderer->SetDepthMask(false);
+      renderer->ClearBuffer(Vector3(0, 0, 0), false, true);
+      renderer->RenderVertexBuffer(buffer.visibleGeometry, e_RenderMode_Semantic);
+
+      for (std::size_t i = 0; i < buffer.captureRequests.size(); ++i) {
+        if (!buffer.captureRequests[i].segmentationFilename.empty()) {
+          renderer->SaveColorBuffer(buffer.captureRequests[i].segmentationFilename, e_TargetAttachment_Color2, view.width, view.height);
+        }
+      }
+
+      renderer->UseShader("simple");
+      renderer->SetMatrix("projectionMatrix", projectionMatrix);
+      renderer->SetMatrix("viewMatrix", viewMatrix);
+      targets.push_back(e_TargetAttachment_Color0);
+      targets.push_back(e_TargetAttachment_Color1);
+      targets.push_back(e_TargetAttachment_Color2);
+      renderer->SetRenderTargets(targets);
+      targets.clear();
+      renderer->SetDepthFunction(e_DepthFunction_Less);
+      renderer->SetDepthMask(true);
+      renderer->ClearBuffer(Vector3(0, 0, 0), true, true);
+      renderer->RenderVertexBuffer(buffer.visibleGeometry, e_RenderMode_Full);
+    }
+
 
 
     // lighting phase
@@ -261,6 +304,12 @@ namespace blunted {
     renderer->RenderOverlay2D();
     renderer->SetFramebufferGammaCorrection(false);
 
+    for (std::size_t i = 0; i < buffer.captureRequests.size(); ++i) {
+      if (!buffer.captureRequests[i].rgbFilename.empty()) {
+        renderer->SaveBackBuffer(buffer.captureRequests[i].rgbFilename);
+      }
+    }
+
     renderer->SetTextureUnit(2);
     renderer->BindTexture(0);
     renderer->SetTextureUnit(1);
@@ -284,6 +333,7 @@ namespace blunted {
     buffer.visibleGeometry.clear();
     buffer.visibleLights.clear();
     buffer.skyboxes.clear();
+    buffer.captureRequests.clear();
 
     return true;
   }

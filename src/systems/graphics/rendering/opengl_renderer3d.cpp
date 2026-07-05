@@ -82,6 +82,18 @@ void WaitForAsyncBackBufferSaves() {
   }
 }
 
+GLenum ReadBufferForAttachment(blunted::e_TargetAttachment attachment) {
+  switch (attachment) {
+    case blunted::e_TargetAttachment_Color0: return GL_COLOR_ATTACHMENT0;
+    case blunted::e_TargetAttachment_Color1: return GL_COLOR_ATTACHMENT1;
+    case blunted::e_TargetAttachment_Color2: return GL_COLOR_ATTACHMENT2;
+    case blunted::e_TargetAttachment_Color3: return GL_COLOR_ATTACHMENT3;
+    case blunted::e_TargetAttachment_Front: return GL_FRONT;
+    case blunted::e_TargetAttachment_Back: return GL_BACK;
+    default: return GL_BACK;
+  }
+}
+
 }
 
 namespace blunted {
@@ -544,6 +556,7 @@ struct GLfunctions {
     LoadShader("lighting", "media/shaders/lighting");
     LoadShader("ambient", "media/shaders/ambient");
     LoadShader("zphase", "media/shaders/zphase");
+    LoadShader("semantic", "media/shaders/semantic");
     LoadShader("postprocess", "media/shaders/postprocess");
     LoadShader("overlay", "media/shaders/overlay");
 
@@ -1208,6 +1221,9 @@ struct GLfunctions {
       //transform.Transpose();
       //glMultMatrixf((float*)transform.elements);
       SetMatrix("modelMatrix", transform);
+      if (renderMode == e_RenderMode_Semantic) {
+        SetUniformFloat3("semantic", "semanticColor", queueEntry->semanticColor.coords[0], queueEntry->semanticColor.coords[1], queueEntry->semanticColor.coords[2]);
+      }
 
       bool sequential = true; // buffer vertexbuffer chunks until a change happens (in texture or index, for example)
       struct BufferChunk {
@@ -1868,6 +1884,61 @@ struct GLfunctions {
     return true;
   }
 
+  bool OpenGLRenderer3D::SaveDepthBuffer(const std::string &filename, int width, int height) {
+    if (!contextIsActive) return false;
+    if (width <= 0 || height <= 0) return false;
+
+    std::vector<float> depth(width * height);
+    boost::shared_ptr<std::vector<unsigned char> > flipped = boost::make_shared<std::vector<unsigned char> >(width * height * 4);
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, &depth[0]);
+
+    const int stride = width * 4;
+    for (int y = 0; y < height; ++y) {
+      unsigned char *dst = &(*flipped)[y * stride];
+      const int sourceY = height - y - 1;
+      for (int x = 0; x < width; ++x) {
+        const float d = clamp(depth[sourceY * width + x], 0.0f, 1.0f);
+        const unsigned char value = static_cast<unsigned char>((1.0f - d) * 255.0f);
+        dst[x * 4 + 0] = value;
+        dst[x * 4 + 1] = value;
+        dst[x * 4 + 2] = value;
+        dst[x * 4 + 3] = 255;
+      }
+    }
+
+    boost::shared_ptr<boost::thread> writerThread = boost::make_shared<boost::thread>(WritePngAsync, filename, flipped, width, height, stride);
+    TrackAsyncBackBufferSave(writerThread);
+    return true;
+  }
+
+  bool OpenGLRenderer3D::SaveColorBuffer(const std::string &filename, e_TargetAttachment attachment, int width, int height) {
+    if (!contextIsActive) return false;
+    if (width <= 0 || height <= 0) return false;
+
+    std::vector<unsigned char> pixels(width * height * 4);
+    boost::shared_ptr<std::vector<unsigned char> > flipped = boost::make_shared<std::vector<unsigned char> >(width * height * 4);
+
+    glReadBuffer(ReadBufferForAttachment(attachment));
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, &pixels[0]);
+
+    const int stride = width * 4;
+    for (int y = 0; y < height; ++y) {
+      const unsigned char *src = &pixels[(height - y - 1) * stride];
+      unsigned char *dst = &(*flipped)[y * stride];
+      std::copy(src, src + stride, dst);
+      for (int x = 0; x < width; ++x) {
+        dst[x * 4 + 3] = 255;
+      }
+    }
+
+    boost::shared_ptr<boost::thread> writerThread = boost::make_shared<boost::thread>(WritePngAsync, filename, flipped, width, height, stride);
+    TrackAsyncBackBufferSave(writerThread);
+    return true;
+  }
+
   void OpenGLRenderer3D::WaitForBackBufferSaves() {
     WaitForAsyncBackBufferSaves();
   }
@@ -2064,6 +2135,10 @@ struct GLfunctions {
     shaders.insert(std::pair<std::string, Shader>(name, shader));
 
     if (name == "zphase") {
+      mapping.glBindAttribLocation(shader.programID, 0, "position");
+      mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
+    }
+    if (name == "semantic") {
       mapping.glBindAttribLocation(shader.programID, 0, "position");
       mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
     }

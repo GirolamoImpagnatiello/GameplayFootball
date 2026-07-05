@@ -248,6 +248,9 @@ class Match {
     void RecordSoccerReplayGoal(bool ownGoal);
     void RecordSoccerReplayPossession();
     void ScheduleSoccerReplayFrameDump();
+    void InitializeCosmosCaptureExporter();
+    void ScheduleCosmosFrameCapture();
+    void FlushCosmosCaptureMetadata();
 
     void PrepareGoalNetting();
     void UpdateGoalNetting(bool ballTouchesNet = false);
@@ -333,6 +336,18 @@ class Match {
     int datasetLastFrameHalf;
     int datasetLastFrameSecond;
     bool datasetGameOverRecorded;
+    bool cosmosCaptureEnabled;
+    bool cosmosCaptureComplete;
+    int cosmosCaptureFps;
+    int cosmosCaptureTargetFrames;
+    int cosmosCaptureSkipFrames;
+    int cosmosCaptureFrameCount;
+    int cosmosCaptureLastFrameBucket;
+    unsigned long cosmosCaptureStartActualTime_ms;
+    std::string cosmosCaptureDirectory;
+    std::string cosmosRgbDirectory;
+    std::string cosmosDepthDirectory;
+    std::string cosmosSegmentationDirectory;
 
     // camera
     Quaternion cameraOrientation;
