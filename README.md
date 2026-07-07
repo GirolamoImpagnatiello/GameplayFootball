@@ -134,11 +134,12 @@ The simulator can export a short Cosmos Transfer capture with synchronized RGB, 
 "cosmos_capture_enabled" "true"
 "cosmos_capture_fps" "30"
 "cosmos_capture_frame_count" "121"
+"cosmos_capture_skip_frames" "0"
 "cosmos_capture_root" "output/cosmos_transfer"
 "cosmos_capture_prompt" "A photorealistic broadcast soccer match in a modern stadium, realistic grass, players, ball, lighting and camera motion."
 ```
 
-When a match enters normal play, the capture is written under `output/cosmos_transfer/capture_YYYYMMDD_HHMMSS` with `rgb`, `depth`, `seg`, `metadata.json`, `prompt.json` and `cosmos_transfer_spec.json`.
+When a match enters normal play, the capture is written under `output/cosmos_transfer/capture_YYYYMMDD_HHMMSS` with `rgb`, `depth`, `seg`, `metadata.json`, `prompt.json` and `cosmos_transfer_spec.json`. `cosmos_capture_fps` is the simulator-time sampling rate, so extra rendered frames on fast machines are ignored. If rendering misses a sampling bucket, the exporter skips that bucket instead of duplicating a frame; `metadata.json` records this as `dropped_timing_buckets`.
 
 To build the three MP4 control videos after capture:
 

@@ -343,6 +343,7 @@ class Match {
     int cosmosCaptureSkipFrames;
     int cosmosCaptureFrameCount;
     int cosmosCaptureLastFrameBucket;
+    int cosmosCaptureDroppedBuckets;
     unsigned long cosmosCaptureStartActualTime_ms;
     std::string cosmosCaptureDirectory;
     std::string cosmosRgbDirectory;

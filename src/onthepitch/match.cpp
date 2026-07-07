@@ -133,6 +133,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   cosmosCaptureSkipFrames = 0;
   cosmosCaptureFrameCount = 0;
   cosmosCaptureLastFrameBucket = -1;
+  cosmosCaptureDroppedBuckets = 0;
   cosmosCaptureStartActualTime_ms = 0;
 
   // shared ptr to menutask, because menutask shouldn't die before match does
@@ -967,7 +968,8 @@ void Match::InitializeCosmosCaptureExporter() {
   cosmosCaptureTargetFrames = std::max(1, GetConfiguration()->GetInt("cosmos_capture_frame_count", 121));
   cosmosCaptureSkipFrames = std::max(0, GetConfiguration()->GetInt("cosmos_capture_skip_frames", 0));
   cosmosCaptureFrameCount = 0;
-  cosmosCaptureLastFrameBucket = -1;
+  cosmosCaptureLastFrameBucket = cosmosCaptureSkipFrames - 1;
+  cosmosCaptureDroppedBuckets = 0;
   cosmosCaptureStartActualTime_ms = 0;
   cosmosCaptureComplete = false;
 
@@ -993,12 +995,18 @@ void Match::ScheduleCosmosFrameCapture() {
   if (!IsSoccerReplayMainPhase(matchPhase)) return;
   if (pause) return;
 
-  if (cosmosCaptureStartActualTime_ms == 0) cosmosCaptureStartActualTime_ms = fetchedbuf_actualTime_ms;
+  if (cosmosCaptureStartActualTime_ms == 0) {
+    cosmosCaptureStartActualTime_ms = fetchedbuf_actualTime_ms;
+    cosmosCaptureLastFrameBucket = cosmosCaptureSkipFrames - 1;
+  }
   const unsigned long elapsed_ms = fetchedbuf_actualTime_ms - cosmosCaptureStartActualTime_ms;
   const int frameBucket = static_cast<int>((elapsed_ms * static_cast<unsigned long>(cosmosCaptureFps)) / 1000);
   if (frameBucket < cosmosCaptureSkipFrames) return;
-  if (frameBucket == cosmosCaptureLastFrameBucket) return;
+  if (frameBucket <= cosmosCaptureLastFrameBucket) return;
 
+  if (frameBucket > cosmosCaptureLastFrameBucket + 1) {
+    cosmosCaptureDroppedBuckets += frameBucket - cosmosCaptureLastFrameBucket - 1;
+  }
   cosmosCaptureLastFrameBucket = frameBucket;
   cosmosCaptureFrameCount++;
 
@@ -1011,7 +1019,6 @@ void Match::ScheduleCosmosFrameCapture() {
 
   if (cosmosCaptureFrameCount >= cosmosCaptureTargetFrames) {
     cosmosCaptureComplete = true;
-    GetGraphicsSystem()->WaitForBackBufferSaves();
     FlushCosmosCaptureMetadata();
   }
 }
@@ -1068,6 +1075,7 @@ void Match::FlushCosmosCaptureMetadata() {
       metadata << "  \"fps\": " << cosmosCaptureFps << ",\n";
       metadata << "  \"frame_count\": " << cosmosCaptureFrameCount << ",\n";
       metadata << "  \"skip_frames\": " << cosmosCaptureSkipFrames << ",\n";
+      metadata << "  \"dropped_timing_buckets\": " << cosmosCaptureDroppedBuckets << ",\n";
       metadata << "  \"rgb_directory\": \"rgb\",\n";
       metadata << "  \"depth_directory\": \"depth\",\n";
       metadata << "  \"segmentation_directory\": \"seg\",\n";

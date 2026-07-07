@@ -148,17 +148,21 @@ namespace blunted {
     renderer->RenderVertexBuffer(buffer.visibleGeometry, e_RenderMode_Full);
 
     if (!buffer.captureRequests.empty()) {
+      std::vector<std::string> depthFilenames;
       for (std::size_t i = 0; i < buffer.captureRequests.size(); ++i) {
         if (!buffer.captureRequests[i].depthFilename.empty()) {
-          renderer->SaveDepthBuffer(buffer.captureRequests[i].depthFilename, view.width, view.height);
+          depthFilenames.push_back(buffer.captureRequests[i].depthFilename);
         }
+      }
+      if (!depthFilenames.empty()) {
+        renderer->SaveDepthBuffer(depthFilenames, view.width, view.height);
       }
 
       renderer->UseShader("semantic");
       renderer->SetMatrix("projectionMatrix", projectionMatrix);
       renderer->SetMatrix("viewMatrix", viewMatrix);
 
-      targets.push_back(e_TargetAttachment_Color2);
+      targets.push_back(e_TargetAttachment_Color3);
       renderer->SetRenderTargets(targets);
       targets.clear();
 
@@ -170,24 +174,15 @@ namespace blunted {
       renderer->ClearBuffer(Vector3(0, 0, 0), false, true);
       renderer->RenderVertexBuffer(buffer.visibleGeometry, e_RenderMode_Semantic);
 
+      std::vector<std::string> segmentationFilenames;
       for (std::size_t i = 0; i < buffer.captureRequests.size(); ++i) {
         if (!buffer.captureRequests[i].segmentationFilename.empty()) {
-          renderer->SaveColorBuffer(buffer.captureRequests[i].segmentationFilename, e_TargetAttachment_Color2, view.width, view.height);
+          segmentationFilenames.push_back(buffer.captureRequests[i].segmentationFilename);
         }
       }
-
-      renderer->UseShader("simple");
-      renderer->SetMatrix("projectionMatrix", projectionMatrix);
-      renderer->SetMatrix("viewMatrix", viewMatrix);
-      targets.push_back(e_TargetAttachment_Color0);
-      targets.push_back(e_TargetAttachment_Color1);
-      targets.push_back(e_TargetAttachment_Color2);
-      renderer->SetRenderTargets(targets);
-      targets.clear();
-      renderer->SetDepthFunction(e_DepthFunction_Less);
-      renderer->SetDepthMask(true);
-      renderer->ClearBuffer(Vector3(0, 0, 0), true, true);
-      renderer->RenderVertexBuffer(buffer.visibleGeometry, e_RenderMode_Full);
+      if (!segmentationFilenames.empty()) {
+        renderer->SaveColorBuffer(segmentationFilenames, e_TargetAttachment_Color3, view.width, view.height);
+      }
     }
 
 
@@ -304,10 +299,14 @@ namespace blunted {
     renderer->RenderOverlay2D();
     renderer->SetFramebufferGammaCorrection(false);
 
+    std::vector<std::string> rgbFilenames;
     for (std::size_t i = 0; i < buffer.captureRequests.size(); ++i) {
       if (!buffer.captureRequests[i].rgbFilename.empty()) {
-        renderer->SaveBackBuffer(buffer.captureRequests[i].rgbFilename);
+        rgbFilenames.push_back(buffer.captureRequests[i].rgbFilename);
       }
+    }
+    if (!rgbFilenames.empty()) {
+      renderer->SaveBackBuffer(rgbFilenames);
     }
 
     renderer->SetTextureUnit(2);

@@ -29,6 +29,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <deque>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <boost/make_shared.hpp>
@@ -55,30 +56,130 @@
 namespace {
 
 boost::mutex asyncBackBufferSaveMutex;
-std::vector<boost::shared_ptr<boost::thread> > asyncBackBufferSaveThreads;
+boost::condition asyncBackBufferSaveCondition;
 
-void WritePngAsync(const std::string filename, boost::shared_ptr<std::vector<unsigned char> > pixels, int width, int height, int stride) {
-  SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(&(*pixels)[0], width, height, 32, stride, SDL_PIXELFORMAT_RGBA32);
+struct PixelWriteJob {
+  std::vector<std::string> filenames;
+  boost::shared_ptr<std::vector<unsigned char> > source;
+  int width;
+  int height;
+  int stride;
+  bool depth;
+};
+
+std::deque<PixelWriteJob> asyncPixelWriteJobs;
+boost::shared_ptr<boost::thread> asyncPixelWriterThread;
+bool asyncPixelWriterShutdown = false;
+bool asyncPixelWriterRunning = false;
+int asyncPixelWriterActiveJobs = 0;
+
+void ProcessPixelWriteJob(const PixelWriteJob &job) {
+  if (job.filenames.empty()) return;
+  boost::shared_ptr<std::vector<unsigned char> > pixels = boost::make_shared<std::vector<unsigned char> >(job.width * job.height * 4);
+
+  if (job.depth) {
+    const float *depthPixels = reinterpret_cast<const float*>(&(*job.source)[0]);
+    for (int y = 0; y < job.height; ++y) {
+      unsigned char *dst = &(*pixels)[y * job.stride];
+      const int sourceY = job.height - y - 1;
+      for (int x = 0; x < job.width; ++x) {
+        const float d = std::max(0.0f, std::min(depthPixels[sourceY * job.width + x], 1.0f));
+        const unsigned char value = static_cast<unsigned char>((1.0f - d) * 255.0f);
+        dst[x * 4 + 0] = value;
+        dst[x * 4 + 1] = value;
+        dst[x * 4 + 2] = value;
+        dst[x * 4 + 3] = 255;
+      }
+    }
+  } else {
+    for (int y = 0; y < job.height; ++y) {
+      const unsigned char *src = &(*job.source)[(job.height - y - 1) * job.stride];
+      unsigned char *dst = &(*pixels)[y * job.stride];
+      std::copy(src, src + job.stride, dst);
+      for (int x = 0; x < job.width; ++x) {
+        dst[x * 4 + 3] = 255;
+      }
+    }
+  }
+
+  SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(&(*pixels)[0], job.width, job.height, 32, job.stride, SDL_PIXELFORMAT_RGBA32);
   if (surface) {
-    IMG_SavePNG(surface, filename.c_str());
+    for (std::size_t i = 0; i < job.filenames.size(); ++i) {
+      IMG_SavePNG(surface, job.filenames[i].c_str());
+    }
     SDL_FreeSurface(surface);
   }
 }
 
-void TrackAsyncBackBufferSave(boost::shared_ptr<boost::thread> thread) {
+void PixelWriterThreadMain() {
+  while (true) {
+    PixelWriteJob job;
+    {
+      boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
+      while (asyncPixelWriteJobs.empty() && !asyncPixelWriterShutdown) {
+        asyncBackBufferSaveCondition.wait(lock);
+      }
+      if (asyncPixelWriterShutdown && asyncPixelWriteJobs.empty()) break;
+
+      job = asyncPixelWriteJobs.front();
+      asyncPixelWriteJobs.pop_front();
+      asyncPixelWriterActiveJobs++;
+    }
+
+    ProcessPixelWriteJob(job);
+
+    {
+      boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
+      asyncPixelWriterActiveJobs--;
+      if (asyncPixelWriteJobs.empty() && asyncPixelWriterActiveJobs == 0) {
+        asyncBackBufferSaveCondition.notify_all();
+      }
+    }
+  }
+}
+
+void EnsurePixelWriterThread() {
+  if (!asyncPixelWriterThread) {
+    asyncPixelWriterShutdown = false;
+    asyncPixelWriterRunning = true;
+    asyncPixelWriterThread = boost::make_shared<boost::thread>(PixelWriterThreadMain);
+  }
+}
+
+void EnqueuePixelWriteJob(const PixelWriteJob &job) {
   boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
-  asyncBackBufferSaveThreads.push_back(thread);
+  EnsurePixelWriterThread();
+  asyncPixelWriteJobs.push_back(job);
+  asyncBackBufferSaveCondition.notify_one();
 }
 
 void WaitForAsyncBackBufferSaves() {
-  std::vector<boost::shared_ptr<boost::thread> > threads;
+  boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
+  while (!asyncPixelWriteJobs.empty() || asyncPixelWriterActiveJobs > 0) {
+    asyncBackBufferSaveCondition.wait(lock);
+  }
+}
+
+void ShutdownAsyncBackBufferSaveThread() {
+  boost::shared_ptr<boost::thread> writerThread;
   {
     boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
-    threads.swap(asyncBackBufferSaveThreads);
+    if (!asyncPixelWriterThread) return;
+    while (!asyncPixelWriteJobs.empty() || asyncPixelWriterActiveJobs > 0) {
+      asyncBackBufferSaveCondition.wait(lock);
+    }
+    asyncPixelWriterShutdown = true;
+    asyncBackBufferSaveCondition.notify_all();
+    writerThread = asyncPixelWriterThread;
   }
 
-  for (std::size_t i = 0; i < threads.size(); ++i) {
-    if (threads[i]) threads[i]->join();
+  writerThread->join();
+
+  {
+    boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
+    asyncPixelWriterThread.reset();
+    asyncPixelWriterRunning = false;
+    asyncPixelWriterShutdown = false;
   }
 }
 
@@ -106,6 +207,106 @@ struct GLfunctions {
 
   GLfunctions mapping;
 
+namespace {
+
+struct AsyncPixelRead {
+  std::vector<std::string> filenames;
+  GLuint pbo;
+  int width;
+  int height;
+  int stride;
+  GLenum format;
+  GLenum type;
+  bool depth;
+  unsigned int readyFrame;
+};
+
+std::vector<AsyncPixelRead> asyncPixelReads;
+unsigned int asyncPixelReadFrame = 0;
+const unsigned int asyncPixelReadLatencyFrames = 12;
+
+std::size_t GetPixelReadByteSize(const AsyncPixelRead &read) {
+  if (read.depth) return static_cast<std::size_t>(read.width) * static_cast<std::size_t>(read.height) * sizeof(float);
+  return static_cast<std::size_t>(read.width) * static_cast<std::size_t>(read.height) * 4;
+}
+
+bool DispatchAsyncPixelRead(const AsyncPixelRead &read) {
+  const std::size_t sourceSize = GetPixelReadByteSize(read);
+  mapping.glBindBuffer(GL_PIXEL_PACK_BUFFER, read.pbo);
+  void *data = mapping.glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, sourceSize, GL_MAP_READ_BIT);
+  if (!data) {
+    mapping.glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    return false;
+  }
+
+  boost::shared_ptr<std::vector<unsigned char> > source = boost::make_shared<std::vector<unsigned char> >(sourceSize);
+  std::copy(static_cast<const unsigned char*>(data), static_cast<const unsigned char*>(data) + sourceSize, source->begin());
+
+  mapping.glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+  mapping.glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  mapping.glDeleteBuffers(1, &read.pbo);
+
+  PixelWriteJob job;
+  job.filenames = read.filenames;
+  job.source = source;
+  job.width = read.width;
+  job.height = read.height;
+  job.stride = read.stride;
+  job.depth = read.depth;
+  EnqueuePixelWriteJob(job);
+  return true;
+}
+
+void ServiceAsyncPixelReads(bool force, int maxDispatches = 0) {
+  std::vector<AsyncPixelRead> pending;
+  pending.swap(asyncPixelReads);
+  int dispatched = 0;
+
+  for (std::size_t i = 0; i < pending.size(); ++i) {
+    const bool dispatchBudgetAvailable = force || maxDispatches <= 0 || dispatched < maxDispatches;
+    if (dispatchBudgetAvailable && (force || pending[i].readyFrame <= asyncPixelReadFrame)) {
+      if (!DispatchAsyncPixelRead(pending[i])) {
+        if (force) {
+          mapping.glDeleteBuffers(1, &pending[i].pbo);
+        } else {
+          asyncPixelReads.push_back(pending[i]);
+        }
+      } else {
+        dispatched++;
+      }
+    } else {
+      asyncPixelReads.push_back(pending[i]);
+    }
+  }
+}
+
+bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, int height, GLenum format, GLenum type, bool depth) {
+  if (filenames.empty()) return false;
+  if (width <= 0 || height <= 0) return false;
+
+  AsyncPixelRead read;
+  read.filenames = filenames;
+  read.pbo = 0;
+  read.width = width;
+  read.height = height;
+  read.stride = width * 4;
+  read.format = format;
+  read.type = type;
+  read.depth = depth;
+  read.readyFrame = asyncPixelReadFrame + asyncPixelReadLatencyFrames;
+
+  mapping.glGenBuffers(1, &read.pbo);
+  mapping.glBindBuffer(GL_PIXEL_PACK_BUFFER, read.pbo);
+  mapping.glBufferData(GL_PIXEL_PACK_BUFFER, GetPixelReadByteSize(read), NULL, GL_STREAM_READ);
+  mapping.glReadPixels(0, 0, width, height, format, type, 0);
+  mapping.glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
+  asyncPixelReads.push_back(read);
+  return true;
+}
+
+}
+
   OpenGLRenderer3D::OpenGLRenderer3D() : context(0), contextIsActive(true) {
     FOV = 45;
     overallBrightness = 128;
@@ -121,6 +322,8 @@ struct GLfunctions {
   };
 
   void OpenGLRenderer3D::SwapBuffers() {
+    asyncPixelReadFrame++;
+    ServiceAsyncPixelReads(false, 1);
     SDL_GL_SwapWindow(window);
   }
 
@@ -581,6 +784,9 @@ struct GLfunctions {
   }
 
   void OpenGLRenderer3D::Exit() {
+    WaitForBackBufferSaves();
+    ShutdownAsyncBackBufferSaveThread();
+
     DeleteTexture(noiseTexID);
 
     std::map<std::string, Shader>::iterator shaderIter = shaders.begin();
@@ -640,6 +846,9 @@ struct GLfunctions {
     view.gBuffer_AuxTexID = CreateTexture(e_InternalPixelFormat_RGBA16F, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
     //view.gBuffer_AuxTexID = CreateTexture(e_InternalPixelFormat_RGBA32F, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
     SetFrameBufferTexture2D(e_TargetAttachment_Color2, view.gBuffer_AuxTexID);
+
+    view.semanticMaskTexID = CreateTexture(e_InternalPixelFormat_RGBA8, e_PixelFormat_RGBA, gBufWidth, gBufHeight, false, false, false, false, false);
+    SetFrameBufferTexture2D(e_TargetAttachment_Color3, view.semanticMaskTexID);
 
     std::vector<e_TargetAttachment> targets;
     targets.push_back(e_TargetAttachment_Color0);
@@ -712,6 +921,7 @@ struct GLfunctions {
     SetFrameBufferTexture2D(e_TargetAttachment_Color0, 0);
     SetFrameBufferTexture2D(e_TargetAttachment_Color1, 0);
     SetFrameBufferTexture2D(e_TargetAttachment_Color2, 0);
+    SetFrameBufferTexture2D(e_TargetAttachment_Color3, 0);
     DeleteFrameBuffer(view->gBufferID);
 
     BindFrameBuffer(view->accumBufferID);
@@ -723,6 +933,7 @@ struct GLfunctions {
     DeleteTexture(view->gBuffer_NormalTexID);
     DeleteTexture(view->gBuffer_DepthTexID);
     DeleteTexture(view->gBuffer_AuxTexID);
+    DeleteTexture(view->semanticMaskTexID);
 
     DeleteTexture(view->accumBuffer_AccumTexID);
     DeleteTexture(view->accumBuffer_ModifierTexID);
@@ -1859,87 +2070,53 @@ struct GLfunctions {
   }
 
   bool OpenGLRenderer3D::SaveBackBuffer(const std::string &filename) {
+    std::vector<std::string> filenames;
+    filenames.push_back(filename);
+    return SaveBackBuffer(filenames);
+  }
+
+  bool OpenGLRenderer3D::SaveBackBuffer(const std::vector<std::string> &filenames) {
     if (!contextIsActive) return false;
     if (context_width <= 0 || context_height <= 0) return false;
 
-    std::vector<unsigned char> pixels(context_width * context_height * 4);
-    boost::shared_ptr<std::vector<unsigned char> > flipped = boost::make_shared<std::vector<unsigned char> >(context_width * context_height * 4);
-
     glReadBuffer(GL_BACK);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, context_width, context_height, GL_RGBA, GL_UNSIGNED_BYTE, &pixels[0]);
-
-    const int stride = context_width * 4;
-    for (int y = 0; y < context_height; ++y) {
-      const unsigned char *src = &pixels[(context_height - y - 1) * stride];
-      unsigned char *dst = &(*flipped)[y * stride];
-      std::copy(src, src + stride, dst);
-      for (int x = 0; x < context_width; ++x) {
-        dst[x * 4 + 3] = 255;
-      }
-    }
-
-    boost::shared_ptr<boost::thread> writerThread = boost::make_shared<boost::thread>(WritePngAsync, filename, flipped, context_width, context_height, stride);
-    TrackAsyncBackBufferSave(writerThread);
-    return true;
+    return QueueAsyncPixelRead(filenames, context_width, context_height, GL_RGBA, GL_UNSIGNED_BYTE, false);
   }
 
   bool OpenGLRenderer3D::SaveDepthBuffer(const std::string &filename, int width, int height) {
+    std::vector<std::string> filenames;
+    filenames.push_back(filename);
+    return SaveDepthBuffer(filenames, width, height);
+  }
+
+  bool OpenGLRenderer3D::SaveDepthBuffer(const std::vector<std::string> &filenames, int width, int height) {
     if (!contextIsActive) return false;
     if (width <= 0 || height <= 0) return false;
 
-    std::vector<float> depth(width * height);
-    boost::shared_ptr<std::vector<unsigned char> > flipped = boost::make_shared<std::vector<unsigned char> >(width * height * 4);
-
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, &depth[0]);
-
-    const int stride = width * 4;
-    for (int y = 0; y < height; ++y) {
-      unsigned char *dst = &(*flipped)[y * stride];
-      const int sourceY = height - y - 1;
-      for (int x = 0; x < width; ++x) {
-        const float d = clamp(depth[sourceY * width + x], 0.0f, 1.0f);
-        const unsigned char value = static_cast<unsigned char>((1.0f - d) * 255.0f);
-        dst[x * 4 + 0] = value;
-        dst[x * 4 + 1] = value;
-        dst[x * 4 + 2] = value;
-        dst[x * 4 + 3] = 255;
-      }
-    }
-
-    boost::shared_ptr<boost::thread> writerThread = boost::make_shared<boost::thread>(WritePngAsync, filename, flipped, width, height, stride);
-    TrackAsyncBackBufferSave(writerThread);
-    return true;
+    return QueueAsyncPixelRead(filenames, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, true);
   }
 
   bool OpenGLRenderer3D::SaveColorBuffer(const std::string &filename, e_TargetAttachment attachment, int width, int height) {
+    std::vector<std::string> filenames;
+    filenames.push_back(filename);
+    return SaveColorBuffer(filenames, attachment, width, height);
+  }
+
+  bool OpenGLRenderer3D::SaveColorBuffer(const std::vector<std::string> &filenames, e_TargetAttachment attachment, int width, int height) {
     if (!contextIsActive) return false;
     if (width <= 0 || height <= 0) return false;
 
-    std::vector<unsigned char> pixels(width * height * 4);
-    boost::shared_ptr<std::vector<unsigned char> > flipped = boost::make_shared<std::vector<unsigned char> >(width * height * 4);
-
     glReadBuffer(ReadBufferForAttachment(attachment));
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, &pixels[0]);
-
-    const int stride = width * 4;
-    for (int y = 0; y < height; ++y) {
-      const unsigned char *src = &pixels[(height - y - 1) * stride];
-      unsigned char *dst = &(*flipped)[y * stride];
-      std::copy(src, src + stride, dst);
-      for (int x = 0; x < width; ++x) {
-        dst[x * 4 + 3] = 255;
-      }
-    }
-
-    boost::shared_ptr<boost::thread> writerThread = boost::make_shared<boost::thread>(WritePngAsync, filename, flipped, width, height, stride);
-    TrackAsyncBackBufferSave(writerThread);
-    return true;
+    return QueueAsyncPixelRead(filenames, width, height, GL_RGBA, GL_UNSIGNED_BYTE, false);
   }
 
   void OpenGLRenderer3D::WaitForBackBufferSaves() {
+    while (!asyncPixelReads.empty()) {
+      ServiceAsyncPixelReads(true);
+    }
     WaitForAsyncBackBufferSaves();
   }
 
