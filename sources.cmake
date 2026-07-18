@@ -391,12 +391,14 @@ set(CORE_SOURCES
 )
 
 set(DATASET_HEADERS
+   src/dataset/blender_tracking_exporter.hpp
    src/dataset/soccerreplay_event.hpp
    src/dataset/soccerreplay_exporter.hpp
    src/dataset/soccerreplay_labels.hpp
 )
 
 set(DATASET_SOURCES
+   src/dataset/blender_tracking_exporter.cpp
    src/dataset/soccerreplay_exporter.cpp
 )
 

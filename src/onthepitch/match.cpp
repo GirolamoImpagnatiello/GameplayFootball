@@ -25,12 +25,14 @@
 
 #include "dataset/soccerreplay_exporter.hpp"
 #include "dataset/soccerreplay_labels.hpp"
+#include "dataset/blender_tracking_exporter.hpp"
 
 #include "menu/pagefactory.hpp"
 #include "menu/startmatch/loadingmatch.hpp"
 
 #include <boost/filesystem.hpp>
 #include <algorithm>
+#include <cctype>
 #include <ctime>
 #include <iomanip>
 #include <sstream>
@@ -75,6 +77,80 @@ std::string PhaseName(e_MatchPhase phase) {
   if (phase == e_MatchPhase_1stHalf) return "first half";
   if (phase == e_MatchPhase_2ndHalf) return "second half";
   return "half";
+}
+
+std::string BlenderRoleFromIndex(int playerIndex) {
+  static const char *roles[playerNum] = {
+    "GK", "LB", "LCB", "RCB", "RB", "LCM", "CM", "RCM", "LW", "ST", "RW"
+  };
+
+  if (playerIndex < 0 || playerIndex >= playerNum) return "P" + int_to_str(playerIndex);
+  return roles[playerIndex];
+}
+
+std::string VelocityTypeName(e_Velocity velocity) {
+  switch (velocity) {
+    case e_Velocity_Idle: return "idle";
+    case e_Velocity_Dribble: return "dribble";
+    case e_Velocity_Walk: return "walk";
+    case e_Velocity_Sprint: return "sprint";
+    default: return "unknown";
+  }
+}
+
+std::string FunctionTypeName(e_FunctionType functionType) {
+  switch (functionType) {
+    case e_FunctionType_None: return "none";
+    case e_FunctionType_Movement: return "movement";
+    case e_FunctionType_BallControl: return "ballcontrol";
+    case e_FunctionType_Trap: return "trap";
+    case e_FunctionType_ShortPass: return "shortpass";
+    case e_FunctionType_LongPass: return "longpass";
+    case e_FunctionType_HighPass: return "highpass";
+    case e_FunctionType_Header: return "header";
+    case e_FunctionType_Shot: return "shot";
+    case e_FunctionType_Deflect: return "deflect";
+    case e_FunctionType_Catch: return "catch";
+    case e_FunctionType_Interfere: return "interfere";
+    case e_FunctionType_Trip: return "trip";
+    case e_FunctionType_Sliding: return "sliding";
+    case e_FunctionType_Special: return "special";
+    default: return "unknown";
+  }
+}
+
+std::string LowercaseCopy(const std::string &value) {
+  std::string result = value;
+  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return result;
+}
+
+std::string BlenderActionFromFunction(e_FunctionType functionType, e_Velocity velocity, const std::string &simAnim) {
+  if (functionType == e_FunctionType_Shot) return "Strike";
+  if (functionType == e_FunctionType_ShortPass || functionType == e_FunctionType_LongPass || functionType == e_FunctionType_HighPass) return "Soccer Pass";
+  if (functionType == e_FunctionType_Header) return "Soccer Header";
+  if (functionType == e_FunctionType_Catch) return "Catch";
+  if (functionType == e_FunctionType_Deflect || functionType == e_FunctionType_Interfere) return "Receive Pass";
+  if (functionType == e_FunctionType_Sliding) return "Sliding";
+  if (functionType == e_FunctionType_Trip) return "Idle";
+
+  const std::string lowered = LowercaseCopy(simAnim);
+  if (lowered.find("shot") != std::string::npos) return "Strike";
+  if (lowered.find("pass") != std::string::npos) return "Soccer Pass";
+  if (lowered.find("header") != std::string::npos) return "Soccer Header";
+  if (lowered.find("catch") != std::string::npos) return "Catch";
+
+  if (velocity == e_Velocity_Sprint) return "Run";
+  if (velocity == e_Velocity_Walk || velocity == e_Velocity_Dribble) return "Jog Forward";
+  return "Idle";
+}
+
+float DegreesFromDirection(const Vector3 &direction, radian fallbackAngle) {
+  Vector3 direction2D = direction.Get2D();
+  if (direction2D.GetLength() > 0.001f) {
+    return atan2(direction2D.coords[1], direction2D.coords[0]) / pi * 180.0f;
+  }
+  return fallbackAngle / pi * 180.0f;
 }
 
 std::string FormatNow(const char *format) {
@@ -383,6 +459,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   bestPossessionTeamID = -1;
   matchPhase = e_MatchPhase_PreMatch;
   InitializeSoccerReplayExporter();
+  InitializeBlenderTrackingExporter();
   InitializeCosmosCaptureExporter();
   SetMatchPhase(e_MatchPhase_PreMatch);
 
@@ -822,6 +899,7 @@ void Match::GameOver() {
   if (!datasetGameOverRecorded) {
     RecordSoccerReplayPhaseEnd(matchPhase);
     FlushSoccerReplayExporter();
+    FlushBlenderTrackingExporter();
     FlushCosmosCaptureMetadata();
     datasetGameOverRecorded = true;
   }
@@ -958,6 +1036,89 @@ void Match::ScheduleSoccerReplayFrameDump() {
   datasetLastFrameSecond = halfSecond;
 
   GetGraphicsSystem()->RequestBackBufferSave(frameFilename);
+}
+
+void Match::InitializeBlenderTrackingExporter() {
+  blenderTrackingLastFrameBucket = -1;
+
+  if (!GetConfiguration()->GetBool("blender_tracking_export_enabled", false)) return;
+
+  const int fps = GetConfiguration()->GetInt("blender_tracking_export_fps", 25);
+  const std::string defaultOutputRoot = "output/blender_tracking";
+  const std::string outputRoot = GetConfiguration()->Get("blender_tracking_export_root", defaultOutputRoot);
+  blenderTrackingExporter.reset(new dataset::blendertracking::BlenderTrackingExporter(outputRoot, fps));
+}
+
+void Match::FlushBlenderTrackingExporter() {
+  if (!blenderTrackingExporter || !blenderTrackingExporter->IsEnabled()) return;
+  blenderTrackingExporter->Flush();
+}
+
+void Match::ScheduleBlenderTrackingFrameDump() {
+  if (!blenderTrackingExporter || !blenderTrackingExporter->IsEnabled()) return;
+  if (!IsSoccerReplayMainPhase(matchPhase)) return;
+  if (pause) return;
+
+  const int fps = blenderTrackingExporter->GetFps();
+  const int frameBucket = static_cast<int>((fetchedbuf_actualTime_ms * fps) / 1000);
+  if (frameBucket == blenderTrackingLastFrameBucket) return;
+  blenderTrackingLastFrameBucket = frameBucket;
+
+  dataset::blendertracking::FrameSnapshot snapshot;
+  snapshot.frame = frameBucket + 1;
+  snapshot.half = GetSoccerReplayHalf(matchPhase);
+  snapshot.match_time_ms = fetchedbuf_matchTime_ms;
+  snapshot.actual_time_ms = fetchedbuf_actualTime_ms;
+  snapshot.time_stamp = FormatSoccerReplayTimeStamp(fetchedbuf_matchTime_ms, matchPhase);
+
+  const Vector3 ballPosition = GetBall()->Predict(0);
+  const Vector3 ballMovement = GetBall()->GetMovement();
+  snapshot.ball.position = dataset::blendertracking::Vec3(ballPosition.coords[0], ballPosition.coords[1], ballPosition.coords[2]);
+  snapshot.ball.velocity = dataset::blendertracking::Vec3(ballMovement.coords[0], ballMovement.coords[1], ballMovement.coords[2]);
+
+  for (int teamID = 0; teamID < 2; ++teamID) {
+    std::vector<Player*> players;
+    GetActiveTeamPlayers(teamID, players);
+
+    for (std::size_t i = 0; i < players.size(); ++i) {
+      Player *player = players[i];
+      if (!player) continue;
+
+      const Vector3 position = player->GetPosition();
+      const Vector3 movement = player->GetMovement();
+      const e_FunctionType functionType = player->GetCurrentFunctionType();
+      const e_Velocity velocityType = player->GetEnumVelocity();
+      const Anim *currentAnim = player->GetCurrentAnim();
+      const std::string simAnim = (currentAnim && currentAnim->anim) ? currentAnim->anim->GetName() : "";
+      const std::string blenderRole = BlenderRoleFromIndex(static_cast<int>(i));
+      const std::string teamPrefix = teamID == 0 ? "A" : "B";
+
+      dataset::blendertracking::PlayerSnapshot playerSnapshot;
+      playerSnapshot.id = teamPrefix + "_" + blenderRole;
+      playerSnapshot.sim_id = teamPrefix + "_P" + int_to_str(static_cast<int>(i));
+      playerSnapshot.team_id = teamID;
+      playerSnapshot.player_id = player->GetID();
+      playerSnapshot.role = blenderRole;
+      playerSnapshot.position = dataset::blendertracking::Vec3(position.coords[0], position.coords[1], position.coords[2]);
+      playerSnapshot.movement = dataset::blendertracking::Vec3(movement.coords[0], movement.coords[1], movement.coords[2]);
+      playerSnapshot.yaw_degrees = DegreesFromDirection(player->GetDirectionVec(), player->GetAngle());
+      playerSnapshot.body_yaw_degrees = DegreesFromDirection(player->GetBodyDirectionVec(), player->GetAngle() + player->GetRelBodyAngle());
+      playerSnapshot.velocity = player->GetFloatVelocity();
+      playerSnapshot.velocity_type = VelocityTypeName(velocityType);
+      playerSnapshot.function_type = FunctionTypeName(functionType);
+      playerSnapshot.sim_anim = simAnim;
+      playerSnapshot.anim_frame = currentAnim ? currentAnim->frameNum : 0;
+      playerSnapshot.anim_frame_count = (currentAnim && currentAnim->anim) ? currentAnim->anim->GetFrameCount() : 0;
+      playerSnapshot.touch_frame = currentAnim ? currentAnim->touchFrame : -1;
+      playerSnapshot.blender_action = BlenderActionFromFunction(functionType, velocityType, simAnim);
+      playerSnapshot.has_possession = player->HasPossession();
+      playerSnapshot.is_ball_retainer = player == GetBallRetainer();
+
+      snapshot.players.push_back(playerSnapshot);
+    }
+  }
+
+  blenderTrackingExporter->RecordFrame(snapshot);
 }
 
 void Match::InitializeCosmosCaptureExporter() {
@@ -1693,6 +1854,7 @@ void Match::Put() {
     // replay
     CaptureReplayFrame(fetchedbuf_actualTime_ms + fetchedbuf_timeDelta);
     ScheduleSoccerReplayFrameDump();
+    ScheduleBlenderTrackingFrameDump();
     ScheduleCosmosFrameCapture();
 
     if (GetDebugMode() == e_DebugMode_AI) GetDebugOverlay()->OnChange();

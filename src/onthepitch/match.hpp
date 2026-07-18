@@ -38,6 +38,9 @@
 #include <memory>
 
 namespace dataset {
+namespace blendertracking {
+class BlenderTrackingExporter;
+}
 namespace soccerreplay1988 {
 class SoccerReplayExporter;
 }
@@ -248,6 +251,9 @@ class Match {
     void RecordSoccerReplayGoal(bool ownGoal);
     void RecordSoccerReplayPossession();
     void ScheduleSoccerReplayFrameDump();
+    void InitializeBlenderTrackingExporter();
+    void ScheduleBlenderTrackingFrameDump();
+    void FlushBlenderTrackingExporter();
     void InitializeCosmosCaptureExporter();
     void ScheduleCosmosFrameCapture();
     void FlushCosmosCaptureMetadata();
@@ -331,11 +337,13 @@ class Match {
     bool autoUpdateIngameCamera;
 
     std::unique_ptr<dataset::soccerreplay1988::SoccerReplayExporter> datasetExporter;
+    std::unique_ptr<dataset::blendertracking::BlenderTrackingExporter> blenderTrackingExporter;
     int datasetLastPossessionTeamID;
     unsigned long datasetLastPossessionEventTime_ms;
     int datasetLastFrameHalf;
     int datasetLastFrameSecond;
     bool datasetGameOverRecorded;
+    int blenderTrackingLastFrameBucket;
     bool cosmosCaptureEnabled;
     bool cosmosCaptureComplete;
     int cosmosCaptureFps;
