@@ -53,6 +53,11 @@ void SetActiveController(int side, bool keyboard) {
 
 MenuTask::MenuTask(float aspectRatio, float margin, TTF_Font *defaultFont, TTF_Font *defaultOutlineFont) : Gui2Task(GetScene2D(), aspectRatio, margin) {
 
+  automaticMatchCount = std::max(0, GetConfiguration()->GetInt("automatic_match_count", 0));
+  automaticBatchEnabled = GetConfiguration()->GetBool("automatic_batch_enabled", false) && automaticMatchCount > 0;
+  automaticQuitWhenDone = GetConfiguration()->GetBool("automatic_quit_when_done", true);
+  automaticMatchesCompleted = 0;
+
   Gui2Style *style = windowManager->GetStyle();
 
   style->SetFont(e_TextType_Default, defaultFont);
@@ -86,7 +91,20 @@ MenuTask::MenuTask(float aspectRatio, float margin, TTF_Font *defaultFont, TTF_F
   PageFactory *pageFactory = new PageFactory();
   windowManager->SetPageFactory(pageFactory);
 
-  if (!QuickStart()) {
+  if (automaticBatchEnabled) {
+
+    const int size = GetControllers().size();
+    for (int i = 0; i < size; i++) {
+      SideSelection side;
+      side.controllerID = i;
+      side.controllerImage = 0;
+      side.side = 0; // no human-controlled side: AI versus AI
+      queuedFixture->sides.push_back(side);
+    }
+
+    menuAction = e_MenuAction_AutomaticMatch;
+
+  } else if (!QuickStart()) {
 
     queuedFixture->team1KitNum = 1;
     queuedFixture->team2KitNum = 2;
@@ -99,6 +117,7 @@ MenuTask::MenuTask(float aspectRatio, float margin, TTF_Font *defaultFont, TTF_F
     for (int i = 0; i < size; i++) {
       SideSelection side;
       side.controllerID = i;
+      side.controllerImage = 0;
       if ((size > 1 && i == 1) || (size == 1 && i == 0)) {
         side.side = -1;
       } else {
@@ -161,9 +180,92 @@ void MenuTask::ProcessPhase() {
     GetGameTask()->Action(e_GameTaskMessage_StopMenuScene);
     GetGameTask()->Action(e_GameTaskMessage_StartMatch);
 
+  } else if (menuAction == e_MenuAction_AutomaticMatch) {
+
+    windowManager->GetPagePath()->Clear();
+
+    GetGameTask()->Action(e_GameTaskMessage_StopMatch);
+    GetGameTask()->Action(e_GameTaskMessage_StopMenuScene);
+    GetGameTask()->Action(e_GameTaskMessage_StartMenuScene);
+
+    ConfigureAutomaticFixture();
+
+    Properties properties;
+    windowManager->GetPageFactory()->CreatePage((int)e_PageID_LoadingMatch, properties, 0);
+
+    printf("Automatic batch: starting match %i/%i (team %i vs team %i)\n",
+           automaticMatchesCompleted + 1, automaticMatchCount, GetTeamID(0), GetTeamID(1));
+
+  } else if (menuAction == e_MenuAction_AutomaticDone) {
+
+    windowManager->GetPagePath()->Clear();
+    GetGameTask()->Action(e_GameTaskMessage_StopMatch);
+    GetGameTask()->Action(e_GameTaskMessage_StopMenuScene);
+
+    printf("Automatic batch: completed %i/%i matches\n", automaticMatchesCompleted, automaticMatchCount);
+
+    if (automaticQuitWhenDone) {
+      EnvironmentManager::GetInstance().SignalQuit();
+    } else {
+      automaticBatchEnabled = false;
+      GetGameTask()->Action(e_GameTaskMessage_StartMenuScene);
+      Properties properties;
+      windowManager->GetPageFactory()->CreatePage((int)e_PageID_MainMenu, properties, 0);
+    }
+
   }
 
   menuAction = e_MenuAction_None;
+}
+
+void MenuTask::ConfigureAutomaticFixture() {
+  DatabaseResult *result = GetDB()->Query("select id from teams order by id");
+  std::vector<std::string> teamIDs;
+  for (unsigned int i = 0; i < result->data.size(); ++i) {
+    if (!result->data.at(i).empty()) teamIDs.push_back(result->data.at(i).at(0));
+  }
+  delete result;
+
+  if (teamIDs.size() < 2) {
+    Log(e_FatalError, "MenuTask", "ConfigureAutomaticFixture", "Automatic batch requires at least two teams in the database");
+    return;
+  }
+
+  std::string homeTeamID = GetConfiguration()->Get("automatic_home_team_id", "3");
+  std::string awayTeamID = GetConfiguration()->Get("automatic_away_team_id", "8");
+
+  if (GetConfiguration()->GetBool("automatic_random_teams", true)) {
+    const unsigned int homeIndex = static_cast<unsigned int>(rand()) % teamIDs.size();
+    unsigned int awayIndex = static_cast<unsigned int>(rand()) % (teamIDs.size() - 1);
+    if (awayIndex >= homeIndex) ++awayIndex;
+    homeTeamID = teamIDs.at(homeIndex);
+    awayTeamID = teamIDs.at(awayIndex);
+  } else {
+    if (std::find(teamIDs.begin(), teamIDs.end(), homeTeamID) == teamIDs.end() ||
+        std::find(teamIDs.begin(), teamIDs.end(), awayTeamID) == teamIDs.end() ||
+        homeTeamID == awayTeamID) {
+      Log(e_FatalError, "MenuTask", "ConfigureAutomaticFixture", "Invalid or identical automatic team IDs");
+      return;
+    }
+  }
+
+  queuedFixture.Lock();
+  queuedFixture->teamID1 = homeTeamID;
+  queuedFixture->teamID2 = awayTeamID;
+  queuedFixture->team1KitNum = GetConfiguration()->GetInt("automatic_home_kit", 2);
+  queuedFixture->team2KitNum = GetConfiguration()->GetInt("automatic_away_kit", 2);
+  queuedFixture.Unlock();
+}
+
+void MenuTask::CompleteAutomaticMatch() {
+  if (!automaticBatchEnabled) return;
+
+  ++automaticMatchesCompleted;
+  if (automaticMatchesCompleted < automaticMatchCount) {
+    menuAction = e_MenuAction_AutomaticMatch;
+  } else {
+    menuAction = e_MenuAction_AutomaticDone;
+  }
 }
 
 bool MenuTask::QuickStart() {

@@ -83,7 +83,14 @@ $frameIndex = Get-Content -Raw -LiteralPath $frameIndexPath | ConvertFrom-Json
 Assert-Condition ($null -ne $annotations.match_information) "match_information mancante"
 Assert-Condition ($null -ne $annotations.referee_information) "referee_information mancante"
 Assert-Condition ($null -ne $annotations.player_information) "player_information mancante"
+Assert-Condition ($null -ne $annotations.event_labels) "event_labels mancante"
 Assert-Condition ($null -ne $annotations.event_descriptions) "event_descriptions mancante"
+
+$exportedLabels = @($annotations.event_labels)
+Assert-Condition ($exportedLabels.Count -eq $canonicalLabels.Count) "event_labels deve contenere tutte e sole le 24 etichette canoniche"
+for ($i = 0; $i -lt $canonicalLabels.Count; $i++) {
+  Assert-Condition ($exportedLabels[$i] -eq $canonicalLabels[$i]) "event_labels non canonico o fuori ordine all'indice $i"
+}
 
 foreach ($event in $annotations.event_descriptions) {
   Assert-Condition ($event.half -eq 1 -or $event.half -eq 2) "half non valido in annotations.json"

@@ -81,6 +81,15 @@ void GamePage::GoShortReplayPage() {
 
 void GamePage::GoExtendedReplayPage() {
 
+  if (GetMenuTask()->IsAutomaticBatch()) {
+    // Match::UpdateIngameCamera pauses the simulation immediately before
+    // emitting this signal. The interactive replay page normally clears that
+    // pause in ReplayPage::OnClose; batch mode has no replay page, so it must
+    // explicitly resume here or the post-goal kick-off can never start.
+    match->Pause(false);
+    return;
+  }
+
   this->Exit();
 
   Properties properties;
@@ -95,6 +104,10 @@ void GamePage::GoExtendedReplayPage() {
 }
 
 void GamePage::GoMatchPhasePage() {
+
+  // In batch mode the referee has already advanced the phase. Avoid opening
+  // the half-time page, whose constructor would pause the unattended match.
+  if (GetMenuTask()->IsAutomaticBatch()) return;
 
   e_MatchPhase nextPhase = match->GetMatchPhase();
 
@@ -117,6 +130,11 @@ void GamePage::ProcessWindowingEvent(WindowingEvent *event) {
 }
 
 void GamePage::ProcessKeyboardEvent(KeyboardEvent *event) {
+
+  if (GetMenuTask()->IsAutomaticBatch()) {
+    event->Ignore();
+    return;
+  }
 
   if (event->GetKeyOnce(SDLK_ESCAPE)) {
 
@@ -153,6 +171,11 @@ void GamePage::ProcessKeyboardEvent(KeyboardEvent *event) {
 }
 
 void GamePage::ProcessJoystickEvent(JoystickEvent *event) {
+
+  if (GetMenuTask()->IsAutomaticBatch()) {
+    event->Ignore();
+    return;
+  }
 
   // oof, the problem is that we are using a GUI joystick event to find out what ingame HID controller pressed <start>.
   // I think we need a new system in which the game doesn't use its own input system, but uses the GUI one.

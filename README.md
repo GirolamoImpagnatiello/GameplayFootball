@@ -147,6 +147,43 @@ To build the three MP4 control videos after capture:
 .\tools\build_cosmos_capture_videos.ps1 -CaptureDirectory output\cosmos_transfer\capture_YYYYMMDD_HHMMSS
 ```
 
+## Unattended dataset batch
+
+The simulator can run a complete AI-versus-AI batch without team-selection,
+match-option, half-time, replay, pause, or game-over interaction. Add or update
+these keys in the config file passed to `gameplayfootball`:
+
+```txt
+"automatic_batch_enabled" "true"
+"automatic_match_count" "10"
+"automatic_random_teams" "true"
+"automatic_home_team_id" "3"
+"automatic_away_team_id" "8"
+"automatic_home_kit" "2"
+"automatic_away_kit" "2"
+"automatic_quit_when_done" "true"
+"match_duration_minutes" "5"
+
+"dataset_export_enabled" "true"
+"dataset_export_root" "output/datasets/soccerreplay1988"
+```
+
+`automatic_match_count` is the number of matches to acquire. With
+`automatic_random_teams=true`, two distinct teams are selected from the database
+before every match; the configured team IDs are ignored. Set it to `false` to
+reuse the two fixed IDs for the whole batch. Every match gets its own dataset
+directory containing `annotations.json`, `frame_index.json`, `frames/`, and
+event clips. `annotations.json` includes the complete 24-label SoccerReplay-1988
+taxonomy in `event_labels`, in addition to the events actually observed in
+`event_descriptions`. The application exits after the final exporter flush when
+`automatic_quit_when_done=true`; otherwise it returns to the main menu.
+
+`match_duration_minutes` controls the total regulation-time simulation duration
+(both halves combined); set pieces and stoppages can add a small amount of wall
+time. The legacy normalized `match_duration` value is used only when the new
+setting is absent. Existing tracking exporters remain configurable through
+`blender_tracking_export_*` and `cosmos_capture_*`.
+
 
 ## Problems? 
 If you have any problems please open an issue. 

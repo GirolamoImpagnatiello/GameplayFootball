@@ -29,6 +29,10 @@ MatchOptionsPage::MatchOptionsPage(Gui2WindowManager *windowManager, const Gui2P
 
   float difficulty = GetConfiguration()->GetReal("match_difficulty", _default_Difficulty);
   float matchDuration = GetConfiguration()->GetReal("match_duration", _default_MatchDuration);
+  if (GetConfiguration()->Exists("match_duration_minutes")) {
+    const float matchDurationMinutes = GetConfiguration()->GetReal("match_duration_minutes", 5.0f);
+    matchDuration = clamp((matchDurationMinutes - 5.0f) / 20.0f, 0.0f, 1.0f);
+  }
   difficultySlider->SetValue(difficulty);
   matchDurationSlider->SetValue(matchDuration);
 
@@ -54,6 +58,7 @@ void MatchOptionsPage::GoLoadingMatchPage() {
 
   GetConfiguration()->Set("match_difficulty", difficultySlider->GetValue());
   GetConfiguration()->Set("match_duration", matchDurationSlider->GetValue());
+  GetConfiguration()->Set("match_duration_minutes", 5.0f + matchDurationSlider->GetValue() * 20.0f);
   GetConfiguration()->SaveFile(GetConfigFilename());
 
   this->Exit();

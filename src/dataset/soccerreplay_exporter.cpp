@@ -262,6 +262,13 @@ bool SoccerReplayExporter::FlushAnnotations() {
   }
   output << "  ],\n";
 
+  const std::vector<std::string> &canonicalLabels = GetCanonicalLabels();
+  output << "  \"event_labels\": [\n";
+  for (std::size_t i = 0; i < canonicalLabels.size(); ++i) {
+    output << "    " << Quote(canonicalLabels[i]) << (i + 1 == canonicalLabels.size() ? "\n" : ",\n");
+  }
+  output << "  ],\n";
+
   output << "  \"event_descriptions\": [\n";
   for (std::size_t i = 0; i < eventDescriptions.size(); ++i) {
     const EventDescription &eventDescription = eventDescriptions[i];

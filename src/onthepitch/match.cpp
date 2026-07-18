@@ -226,7 +226,15 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   resetNetting = false;
   nettingHasChanged = false;
 
-  matchDurationFactor = GetConfiguration()->GetReal("match_duration", 1.0) * 0.2f + 0.05f;
+  if (GetConfiguration()->Exists("match_duration_minutes")) {
+    // matchDurationFactor maps 90 minutes of match clock to the requested
+    // amount of simulator time (set pieces and other stoppages are additional).
+    const float durationMinutes = clamp(GetConfiguration()->GetReal("match_duration_minutes", 5.0f), 1.0f, 180.0f);
+    matchDurationFactor = durationMinutes / 90.0f;
+  } else {
+    // Backward compatibility with the original normalized 0..1 option.
+    matchDurationFactor = GetConfiguration()->GetReal("match_duration", 1.0) * 0.2f + 0.05f;
+  }
   matchDifficulty = GetConfiguration()->GetReal("match_difficulty", 0.8f);
 
   Log(e_Notice, "Match", "Match", "Creating dynamicNode");

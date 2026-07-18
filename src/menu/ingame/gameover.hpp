@@ -23,6 +23,8 @@ class GameOverPage : public Gui2Page {
     GameOverPage(Gui2WindowManager *windowManager, const Gui2PageData &pageData);
     virtual ~GameOverPage();
 
+    virtual void Process();
+
     void GoRematch();
     void GoMainMenu();
 
@@ -30,6 +32,7 @@ class GameOverPage : public Gui2Page {
 
   protected:
     Match *match;
+    bool automaticBatchHandled;
 
 };
 

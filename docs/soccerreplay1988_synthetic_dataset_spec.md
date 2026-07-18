@@ -30,13 +30,16 @@ match time.
 
 ## JSON Top-Level Shape
 
-The annotation JSON must contain four sections:
+The annotation JSON must contain five sections. `event_labels` is the complete
+canonical taxonomy, while `event_descriptions` contains only events that
+actually occurred in the match:
 
 ```json
 {
   "match_information": {},
   "referee_information": {},
   "player_information": [],
+  "event_labels": [],
   "event_descriptions": []
 }
 ```
@@ -112,7 +115,8 @@ Rules:
 
 ## Canonical 24 Event Labels
 
-Use exactly this list for `comments_type`:
+Store exactly this list in the top-level `event_labels` array and use only
+values from this list for `comments_type`:
 
 ```text
 corner

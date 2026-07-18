@@ -12,6 +12,8 @@ using namespace blunted;
 
 GameOverPage::GameOverPage(Gui2WindowManager *windowManager, const Gui2PageData &pageData) : Gui2Page(windowManager, pageData) {
 
+  automaticBatchHandled = false;
+
   match = GetGameTask()->GetMatch();
   match->Pause(true);
 
@@ -58,6 +60,18 @@ GameOverPage::GameOverPage(Gui2WindowManager *windowManager, const Gui2PageData 
 }
 
 GameOverPage::~GameOverPage() {
+}
+
+void GameOverPage::Process() {
+  Gui2Page::Process();
+
+  if (GetMenuTask()->IsAutomaticBatch() && !automaticBatchHandled) {
+    automaticBatchHandled = true;
+    this->Exit();
+    GetMenuTask()->CompleteAutomaticMatch();
+    delete this;
+    return;
+  }
 }
 
 void GameOverPage::GoRematch() {

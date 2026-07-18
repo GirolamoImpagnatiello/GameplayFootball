@@ -23,6 +23,8 @@ using namespace blunted;
 enum e_MenuAction {
   e_MenuAction_Menu, // start main menu
   e_MenuAction_Game, // start game
+  e_MenuAction_AutomaticMatch, // start the next unattended batch match
+  e_MenuAction_AutomaticDone, // finish the unattended batch
   e_MenuAction_None
 };
 
@@ -59,6 +61,11 @@ class MenuTask : public Gui2Task {
     bool QuickStart();
     void QuitGame();
 
+    bool IsAutomaticBatch() const { return automaticBatchEnabled; }
+    int GetAutomaticMatchesCompleted() const { return automaticMatchesCompleted; }
+    int GetAutomaticMatchCount() const { return automaticMatchCount; }
+    void CompleteAutomaticMatch();
+
     void ReleaseAllButtons();
 
     void SetControllerSetup(const std::vector<SideSelection> &sides) { queuedFixture.Lock(); queuedFixture->sides = sides; queuedFixture.Unlock(); }
@@ -72,7 +79,14 @@ class MenuTask : public Gui2Task {
     void SetMenuAction(e_MenuAction menuAction) { this->menuAction = menuAction; }
 
   protected:
+    void ConfigureAutomaticFixture();
+
     e_MenuAction menuAction;
+
+    bool automaticBatchEnabled;
+    bool automaticQuitWhenDone;
+    int automaticMatchCount;
+    int automaticMatchesCompleted;
 
     Lockable<QueuedFixture> queuedFixture; // todo: we can probably unlock this stuff
 
