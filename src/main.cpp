@@ -139,6 +139,11 @@ Properties *GetConfiguration() {
   return config;
 }
 
+bool IsCaptureLockstep() {
+  return config->GetBool("cosmos_capture_enabled", false) &&
+         config->GetBool("cosmos_capture_lockstep", true);
+}
+
 std::string GetActiveSaveDirectory() {
   return activeSaveDirectory;
 }
@@ -420,6 +425,9 @@ int main(int argc, char **argv) {
   if (controllers.size() > 1) menuTask->SetEventJoyButtons(static_cast<HIDGamepad*>(controllers.at(1))->GetControllerMapping(e_ControllerButton_A), static_cast<HIDGamepad*>(controllers.at(1))->GetControllerMapping(e_ControllerButton_B));
 
 
+  // In offline capture, rendering and simulation share one ordered sequence.
+  // A slow GPU or PNG writer must delay the next physics tick, not skip samples.
+  if (IsCaptureLockstep()) timeStep_ms = 10; // Match::Process advances by 10 ms.
   gameSequence = boost::shared_ptr<TaskSequence>(new TaskSequence("game", timeStep_ms, false));
 
   // note: the whole locking stuff is now happening from within some of the code, iirc, 't is all very ugly and unclear. sorry
@@ -437,11 +445,11 @@ int main(int argc, char **argv) {
 
 //  gameSequence->AddLockEntry(graphicsGameMutex, e_LockAction_Unlock); // ---------- unlock ---
 
-  GetScheduler()->RegisterTaskSequence(gameSequence);
 
 
 
-  graphicsSequence = boost::shared_ptr<TaskSequence>(new TaskSequence("graphics", config->GetInt("graphics3d_frametime_ms", 0), true));
+  graphicsSequence = IsCaptureLockstep() ? gameSequence :
+    boost::shared_ptr<TaskSequence>(new TaskSequence("graphics", config->GetInt("graphics3d_frametime_ms", 0), true));
 
   graphicsSequence->AddUserTaskEntry(gameTask, e_TaskPhase_Put);
 
@@ -454,7 +462,8 @@ int main(int argc, char **argv) {
   graphicsSequence->AddSystemTaskEntry(graphicsSystem, e_TaskPhase_Process);
   graphicsSequence->AddSystemTaskEntry(graphicsSystem, e_TaskPhase_Put);
 
-  GetScheduler()->RegisterTaskSequence(graphicsSequence);
+  GetScheduler()->RegisterTaskSequence(gameSequence);
+  if (!IsCaptureLockstep()) GetScheduler()->RegisterTaskSequence(graphicsSequence);
 
 
   // fire!
@@ -514,4 +523,3 @@ int main(int argc, char **argv) {
 
   return 0;
 }
-

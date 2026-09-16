@@ -131,9 +131,8 @@ void PixelWriterThreadMain() {
     {
       boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
       asyncPixelWriterActiveJobs--;
-      if (asyncPixelWriteJobs.empty() && asyncPixelWriterActiveJobs == 0) {
-        asyncBackBufferSaveCondition.notify_all();
-      }
+      // Wake producers as soon as a slot becomes available, as well as flushes.
+      asyncBackBufferSaveCondition.notify_all();
     }
   }
 }
@@ -149,8 +148,13 @@ void EnsurePixelWriterThread() {
 void EnqueuePixelWriteJob(const PixelWriteJob &job) {
   boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
   EnsurePixelWriterThread();
+  // PNG compression can be slower than rendering. Apply backpressure instead
+  // of retaining an unbounded number of full-resolution images in a 32-bit process.
+  while (asyncPixelWriteJobs.size() + asyncPixelWriterActiveJobs >= 3) {
+    asyncBackBufferSaveCondition.wait(lock);
+  }
   asyncPixelWriteJobs.push_back(job);
-  asyncBackBufferSaveCondition.notify_one();
+  asyncBackBufferSaveCondition.notify_all();
 }
 
 void WaitForAsyncBackBufferSaves() {
@@ -284,6 +288,10 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
   if (filenames.empty()) return false;
   if (width <= 0 || height <= 0) return false;
 
+  // Bound GPU staging memory too; frame latency alone is not a memory limit.
+  // A forced drain may wait for the GPU/PNG writer, but preserves every sample.
+  if (asyncPixelReads.size() >= 3) ServiceAsyncPixelReads(true);
+
   AsyncPixelRead read;
   read.filenames = filenames;
   read.pbo = 0;
@@ -323,7 +331,13 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
 
   void OpenGLRenderer3D::SwapBuffers() {
     asyncPixelReadFrame++;
-    ServiceAsyncPixelReads(false, 1);
+    // A Cosmos sample queues three independent GPU readbacks: RGB, depth and
+    // semantic segmentation. Draining only one readback per rendered frame
+    // makes two PBOs accumulate every frame until the 32-bit process runs out
+    // of address space. Drain at the same rate at which Cosmos produces them.
+    // This is deliberately non-blocking: reads that have not reached their
+    // configured GPU latency remain queued for a later frame.
+    ServiceAsyncPixelReads(false, 3);
     SDL_GL_SwapWindow(window);
   }
 

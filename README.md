@@ -139,7 +139,17 @@ The simulator can export a short Cosmos Transfer capture with synchronized RGB, 
 "cosmos_capture_prompt" "A photorealistic broadcast soccer match in a modern stadium, realistic grass, players, ball, lighting and camera motion."
 ```
 
-When a match enters normal play, the capture is written under `output/cosmos_transfer/capture_YYYYMMDD_HHMMSS` with `rgb`, `depth`, `seg`, `metadata.json`, `prompt.json` and `cosmos_transfer_spec.json`. `cosmos_capture_fps` is the simulator-time sampling rate, so extra rendered frames on fast machines are ignored. If rendering misses a sampling bucket, the exporter skips that bucket instead of duplicating a frame; `metadata.json` records this as `dropped_timing_buckets`.
+When a match enters normal play, the capture is written under `output/cosmos_transfer/capture_YYYYMMDD_HHMMSS` with `rgb`, `depth`, `seg`, `metadata.json`, `prompt.json` and `cosmos_transfer_spec.json`.
+
+Capture defaults to `"cosmos_capture_lockstep" "true"`: physics and rendering run in order, and slow image writes delay simulation instead of losing frames. At `"cosmos_capture_fps" "25"`, consecutive images represent exactly 40 ms of simulation, even when producing 10 seconds of video takes longer than 10 seconds. Camera and player smoothing also use simulation time. The bounded GPU and PNG queues keep capture memory from growing with recording length.
+
+`metadata.json` includes `lockstep`, `simulation_timestamps_ms` (one simulation timestamp per image triplet), and `dropped_timing_buckets`. The physics step is 10 ms; rates that do not divide 100 have sampling intervals quantized to that step. Set `"cosmos_capture_lockstep" "false"` only to use the legacy independent simulation/rendering sequences, which may skip sampling buckets on slow hardware.
+
+To verify a completed 250-frame capture at 25 fps, including every image and its simulation timestamp:
+
+```powershell
+.\tools\validate_cosmos_capture.ps1 -CaptureDirectory output\cosmos_transfer\capture_YYYYMMDD_HHMMSS -ExpectedFrames 250 -ExpectedFps 25 -DecodeImages
+```
 
 To build the three MP4 control videos after capture:
 

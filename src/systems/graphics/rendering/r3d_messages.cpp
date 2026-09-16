@@ -309,6 +309,20 @@ namespace blunted {
       renderer->SaveBackBuffer(rgbFilenames);
     }
 
+    bool flushAfterCapture = false;
+    for (std::size_t i = 0; i < buffer.captureRequests.size(); ++i) {
+      if (buffer.captureRequests[i].flushAfterCapture) {
+        flushAfterCapture = true;
+        break;
+      }
+    }
+    if (flushAfterCapture) {
+      // The final Cosmos request is not complete merely because its GPU
+      // readback was queued. Drain pending PBOs and PNG jobs before returning
+      // control to the graphics sequence.
+      renderer->WaitForBackBufferSaves();
+    }
+
     renderer->SetTextureUnit(2);
     renderer->BindTexture(0);
     renderer->SetTextureUnit(1);

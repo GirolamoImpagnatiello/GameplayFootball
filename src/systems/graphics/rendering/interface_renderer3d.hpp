@@ -56,9 +56,11 @@ namespace blunted {
   };
 
   struct ControlFrameCaptureRequest {
+    ControlFrameCaptureRequest() : flushAfterCapture(false) {}
     std::string rgbFilename;
     std::string depthFilename;
     std::string segmentationFilename;
+    bool flushAfterCapture;
   };
 
   struct ShadowMap {

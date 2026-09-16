@@ -57,6 +57,7 @@ bool UpdateNonImportableDB();
 
 Database *GetDB();
 Properties *GetConfiguration();
+bool IsCaptureLockstep();
 std::string GetActiveSaveDirectory();
 void SetActiveSaveDirectory(const std::string &dir);
 bool SuperDebug();

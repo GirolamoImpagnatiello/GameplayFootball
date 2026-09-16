@@ -352,7 +352,9 @@ class Match {
     int cosmosCaptureFrameCount;
     int cosmosCaptureLastFrameBucket;
     int cosmosCaptureDroppedBuckets;
+    bool cosmosCaptureFinalFrameScheduled;
     unsigned long cosmosCaptureStartActualTime_ms;
+    std::vector<unsigned long> cosmosCaptureTimestamps_ms;
     std::string cosmosCaptureDirectory;
     std::string cosmosRgbDirectory;
     std::string cosmosDepthDirectory;

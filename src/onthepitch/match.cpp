@@ -210,6 +210,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   cosmosCaptureFrameCount = 0;
   cosmosCaptureLastFrameBucket = -1;
   cosmosCaptureDroppedBuckets = 0;
+  cosmosCaptureFinalFrameScheduled = false;
   cosmosCaptureStartActualTime_ms = 0;
 
   // shared ptr to menutask, because menutask shouldn't die before match does
@@ -1139,8 +1140,10 @@ void Match::InitializeCosmosCaptureExporter() {
   cosmosCaptureFrameCount = 0;
   cosmosCaptureLastFrameBucket = cosmosCaptureSkipFrames - 1;
   cosmosCaptureDroppedBuckets = 0;
+  cosmosCaptureFinalFrameScheduled = false;
   cosmosCaptureStartActualTime_ms = 0;
   cosmosCaptureComplete = false;
+  cosmosCaptureTimestamps_ms.clear();
 
   const std::string defaultOutputRoot = "output/cosmos_transfer";
   const std::string outputRoot = GetConfiguration()->Get("cosmos_capture_root", defaultOutputRoot);
@@ -1161,6 +1164,16 @@ void Match::InitializeCosmosCaptureExporter() {
 
 void Match::ScheduleCosmosFrameCapture() {
   if (!cosmosCaptureEnabled || cosmosCaptureComplete) return;
+
+  // The graphics sequence invokes Match::Put before rendering. Reaching this
+  // branch therefore means the final request from the previous graphics pass
+  // has returned from its explicit disk flush and all 120 triplets exist.
+  if (cosmosCaptureFinalFrameScheduled) {
+    cosmosCaptureComplete = true;
+    FlushCosmosCaptureMetadata();
+    return;
+  }
+
   if (!IsSoccerReplayMainPhase(matchPhase)) return;
   if (pause) return;
 
@@ -1178,17 +1191,18 @@ void Match::ScheduleCosmosFrameCapture() {
   }
   cosmosCaptureLastFrameBucket = frameBucket;
   cosmosCaptureFrameCount++;
+  cosmosCaptureTimestamps_ms.push_back(fetchedbuf_actualTime_ms);
 
   const std::string frameFilename = FormatCosmosFrameFilename(cosmosCaptureFrameCount);
   ControlFrameCaptureRequest request;
   request.rgbFilename = (boost::filesystem::path(cosmosRgbDirectory) / frameFilename).string();
   request.depthFilename = (boost::filesystem::path(cosmosDepthDirectory) / frameFilename).string();
   request.segmentationFilename = (boost::filesystem::path(cosmosSegmentationDirectory) / frameFilename).string();
+  request.flushAfterCapture = cosmosCaptureFrameCount >= cosmosCaptureTargetFrames;
   GetGraphicsSystem()->RequestControlFrameCapture(request);
 
   if (cosmosCaptureFrameCount >= cosmosCaptureTargetFrames) {
-    cosmosCaptureComplete = true;
-    FlushCosmosCaptureMetadata();
+    cosmosCaptureFinalFrameScheduled = true;
   }
 }
 
@@ -1245,6 +1259,13 @@ void Match::FlushCosmosCaptureMetadata() {
       metadata << "  \"frame_count\": " << cosmosCaptureFrameCount << ",\n";
       metadata << "  \"skip_frames\": " << cosmosCaptureSkipFrames << ",\n";
       metadata << "  \"dropped_timing_buckets\": " << cosmosCaptureDroppedBuckets << ",\n";
+      metadata << "  \"lockstep\": " << (IsCaptureLockstep() ? "true" : "false") << ",\n";
+      metadata << "  \"simulation_timestamps_ms\": [";
+      for (std::size_t i = 0; i < cosmosCaptureTimestamps_ms.size(); ++i) {
+        if (i) metadata << ", ";
+        metadata << cosmosCaptureTimestamps_ms[i];
+      }
+      metadata << "],\n";
       metadata << "  \"rgb_directory\": \"rgb\",\n";
       metadata << "  \"depth_directory\": \"depth\",\n";
       metadata << "  \"segmentation_directory\": \"seg\",\n";
@@ -1691,6 +1712,7 @@ void Match::PreparePutBuffers() {
 
   gameSequenceInfo = GetScheduler()->GetTaskSequenceInfo("game");
   unsigned long time_ms = EnvironmentManager::GetInstance().GetTime_ms() - gameSequenceInfo.startTime_ms;
+  if (IsCaptureLockstep()) time_ms = gameSequenceInfo.timesRan * gameSequenceInfo.sequenceTime_ms;
   timeSincePreviousPreparePut_ms = time_ms - GetPreviousPreparePutTime_ms();
   previousPreparePutTime_ms = time_ms;
 
@@ -1731,6 +1753,9 @@ void Match::FetchPutBuffers() {
   if (GetIterations() < 1) return; // no processes done yet
 
   unsigned long time_ms = EnvironmentManager::GetInstance().GetTime_ms() - gameSequenceInfo.startTime_ms;
+  // Camera, ball and player smoothing must use the same simulation clock as
+  // physics; wall time can be minutes ahead during an offline export.
+  if (IsCaptureLockstep()) time_ms = gameSequenceInfo.timesRan * gameSequenceInfo.sequenceTime_ms;
   timeSincePreviousPut_ms = time_ms - GetPreviousPutTime_ms();
   previousPutTime_ms = time_ms;
   unsigned long putTime_ms = time_ms;// - gameSequenceInfo.startTime_ms; // test: + PredictFrameTimeToGo_ms(7) - 15;
