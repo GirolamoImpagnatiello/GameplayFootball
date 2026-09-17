@@ -16,6 +16,9 @@
 // i do not offer support, so don't ask. to be used for inspiration :)
 
 #include "opengl_renderer3d.hpp"
+#include "capture_video_writer.hpp"
+#include "main.hpp"
+#include <map>
 
 #ifdef __APPLE__
 #define GL_SILENCE_DEPRECATION
@@ -72,6 +75,12 @@ boost::shared_ptr<boost::thread> asyncPixelWriterThread;
 bool asyncPixelWriterShutdown = false;
 bool asyncPixelWriterRunning = false;
 int asyncPixelWriterActiveJobs = 0;
+std::map<std::string, boost::shared_ptr<CaptureVideoWriter> > captureVideos;
+
+void FinishCaptureVideos() {
+  for (auto &entry : captureVideos) entry.second->Finish();
+  captureVideos.clear();
+}
 
 void ProcessPixelWriteJob(const PixelWriteJob &job) {
   if (job.filenames.empty()) return;
@@ -103,9 +112,19 @@ void ProcessPixelWriteJob(const PixelWriteJob &job) {
   }
 
   SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(&(*pixels)[0], job.width, job.height, 32, job.stride, SDL_PIXELFORMAT_RGBA32);
+  if (!surface) throw std::runtime_error("Could not create capture surface");
   if (surface) {
     for (std::size_t i = 0; i < job.filenames.size(); ++i) {
-      IMG_SavePNG(surface, job.filenames[i].c_str());
+      const std::string &filename = job.filenames[i];
+      if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".mkv") {
+        auto &writer = captureVideos[filename];
+        if (!writer) writer.reset(new CaptureVideoWriter(
+          GetConfiguration()->Get("cosmos_ffmpeg_path", "ffmpeg.exe"), filename,
+          job.width, job.height, GetConfiguration()->GetInt("cosmos_capture_fps", 25)));
+        writer->Write(&(*pixels)[0], job.width, job.height);
+      } else if (IMG_SavePNG(surface, filename.c_str()) != 0) {
+        throw std::runtime_error("Could not save " + filename);
+      }
     }
     SDL_FreeSurface(surface);
   }
@@ -126,7 +145,10 @@ void PixelWriterThreadMain() {
       asyncPixelWriterActiveJobs++;
     }
 
-    ProcessPixelWriteJob(job);
+    try { ProcessPixelWriteJob(job); }
+    catch (const std::exception &error) {
+      blunted::Log(blunted::e_FatalError, "Capture", "Write", error.what());
+    }
 
     {
       boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
@@ -161,6 +183,10 @@ void WaitForAsyncBackBufferSaves() {
   boost::mutex::scoped_lock lock(asyncBackBufferSaveMutex);
   while (!asyncPixelWriteJobs.empty() || asyncPixelWriterActiveJobs > 0) {
     asyncBackBufferSaveCondition.wait(lock);
+  }
+  try { FinishCaptureVideos(); }
+  catch (const std::exception &error) {
+    blunted::Log(blunted::e_FatalError, "Capture", "Finalize", error.what());
   }
 }
 
@@ -271,7 +297,7 @@ void ServiceAsyncPixelReads(bool force, int maxDispatches = 0) {
     if (dispatchBudgetAvailable && (force || pending[i].readyFrame <= asyncPixelReadFrame)) {
       if (!DispatchAsyncPixelRead(pending[i])) {
         if (force) {
-          mapping.glDeleteBuffers(1, &pending[i].pbo);
+          Log(e_FatalError, "Capture", "Readback", "GPU readback failed; capture is incomplete");
         } else {
           asyncPixelReads.push_back(pending[i]);
         }
@@ -1448,6 +1474,10 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
       SetMatrix("modelMatrix", transform);
       if (renderMode == e_RenderMode_Semantic) {
         SetUniformFloat3("semantic", "semanticColor", queueEntry->semanticColor.coords[0], queueEntry->semanticColor.coords[1], queueEntry->semanticColor.coords[2]);
+        const bool isPitchSurface = queueEntry->semanticColor.coords[0] == 0.10f &&
+                                    queueEntry->semanticColor.coords[1] == 0.65f &&
+                                    queueEntry->semanticColor.coords[2] == 0.18f;
+        SetUniformInt("semantic", "isPitchSurface", isPitchSurface ? 1 : 0);
       }
 
       bool sequential = true; // buffer vertexbuffer chunks until a change happens (in texture or index, for example)
@@ -2331,6 +2361,7 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
     }
     if (name == "semantic") {
       mapping.glBindAttribLocation(shader.programID, 0, "position");
+      mapping.glBindAttribLocation(shader.programID, 2, "texcoord");
       mapping.glBindFragDataLocation(shader.programID, 0, "stdout");
     }
     if (name == "simple") {
@@ -2370,6 +2401,9 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
       SetUniformInt("simple", "map_normal", 1);
       SetUniformInt("simple", "map_specular", 2);
       SetUniformInt("simple", "map_illumination", 3);
+    }
+    if (name == "semantic") {
+      SetUniformInt("semantic", "map_albedo", 0);
     }
     if (name == "ambient") {
       SetUniformInt("ambient", "map_albedo", 0);

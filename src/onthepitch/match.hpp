@@ -257,6 +257,7 @@ class Match {
     void InitializeCosmosCaptureExporter();
     void ScheduleCosmosFrameCapture();
     void FlushCosmosCaptureMetadata();
+    void ExtractCosmosEventClips();
 
     void PrepareGoalNetting();
     void UpdateGoalNetting(bool ballTouchesNet = false);

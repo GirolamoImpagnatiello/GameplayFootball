@@ -285,10 +285,16 @@ int main(int argc, char **argv) {
 
   Initialize(*config);
 
-  srand(time(NULL));
+  // A non-negative configured seed makes batches and captures reproducible.
+  // -1 (the default) keeps the historical time-based behaviour.
+  int configuredSeed = config->GetInt("random_seed", -1);
+  unsigned int randomSeed = configuredSeed >= 0
+    ? static_cast<unsigned int>(configuredSeed)
+    : static_cast<unsigned int>(time(NULL));
+  srand(randomSeed);
   rand(); // mingw32? buggy compiler? first value seems bogus
-  randomseed(); // for the boost random
-  fastrandomseed();
+  randomseed(randomSeed); // for the boost random
+  fastrandseed = randomSeed;
 
   int timeStep_ms = config->GetInt("physics_frametime_ms", 10);
 

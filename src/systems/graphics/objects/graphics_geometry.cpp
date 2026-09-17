@@ -41,6 +41,12 @@ namespace blunted {
     }
 
     Vector3 DetermineSemanticColor(boost::intrusive_ptr<Geometry> geometry) {
+      if (geometry->PropertyExists("capture_class")) {
+        const std::string label = geometry->GetProperty("capture_class");
+        if (label == "home") return Vector3(0, 0, 1);
+        if (label == "away") return Vector3(1, 0, 0);
+        if (label == "official") return Vector3(0, 1, 1);
+      }
       std::string source = LowerString(geometry->GetName());
       if (geometry->GetGeometryData()) source += " " + LowerString(geometry->GetGeometryData()->GetIdentString());
 
@@ -304,6 +310,7 @@ namespace blunted {
   }
 
   void GraphicsGeometry_GeometryInterpreter::OnUpdateGeometry(boost::intrusive_ptr<Geometry> geometry, bool updateMaterials) {
+    caller->SetSemanticColor(DetermineSemanticColor(geometry));
 
     // todo: right now, you can only go from using no indices to using indices. you cannot go back to not using indices anymore. fix this.
     // todo: rewrite that indices/usesIndices thing either way, it's very unclear what's going on

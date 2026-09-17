@@ -159,6 +159,68 @@ To build the three MP4 control videos after capture:
 
 ## Unattended dataset batch
 
+### Direct lossless video capture (Windows)
+
+The tested video profile records three synchronized FFV1/Matroska masters:
+`control_rgb.mkv`, `control_depth.mkv`, and `control_seg.mkv`. FFmpeg receives
+raw frames through bounded pipes; physics/render timing is unchanged from the
+lockstep PNG mode. The videos carry 25 frames per **simulation** second even
+when recording runs slower than real time. The depth mapping remains the same
+8-bit inverted device depth used by the PNG exporter; it is not metric depth.
+
+```txt
+"cosmos_capture_enabled" "true"
+"cosmos_capture_format" "video"
+"cosmos_capture_lockstep" "true"
+"cosmos_capture_fps" "25"
+"cosmos_capture_frame_count" "0"
+"cosmos_segmentation_team_aware" "true"
+"cosmos_ffmpeg_path" "ffmpeg.exe"
+"dataset_export_enabled" "true"
+"dataset_export_frames" "false"
+```
+
+`frame_count=0` records the match's normal halves through game over; a positive
+limit produces a short capture. `cosmos_capture_quit_when_complete=true` exits
+cleanly after a positive frame limit, for smoke tests. Quit normally to finalize
+the encoder streams; forced process termination can leave incomplete captures.
+FFmpeg failures are logged and abort the run rather than marking it complete.
+FFV1 is lossless but produces large masters: this mode targets capture speed and
+label preservation, not minimum disk space.
+
+Team-aware colors are assigned from simulation identity, independent of kits or
+field side: home `[0,0,255]`, away `[255,0,0]`, officials `[0,255,255]`.
+Goalkeepers and hair use their team's label. Existing field/ball/background
+classes remain present. This replaces team classification from RGB pixels;
+it does not claim to reproduce an external preprocessing palette. Colors are
+recorded in `metadata.json`. `video_and_png` writes both forms for comparisons;
+`png` retains the original exporter.
+
+Annotation-only dataset export keeps event timestamps in `frame_index.json`
+without creating the legacy 1 fps PNG clips. Its path is stored as `event_index`
+in the video metadata. The normal image-dataset validator does not apply to
+this annotation-only mode.
+
+Extract aligned PNGs **after** recording (or omit `-Png` for lossless video clips):
+
+```powershell
+.\tools\extract_capture_video.ps1 -CaptureDirectory <capture> -OutputDirectory <new-folder> -StartFrame 1 -FrameCount 750 -Png
+.\tools\extract_capture_video.ps1 -CaptureDirectory <capture> -OutputDirectory <new-folder> -EventTimeMs 45000 -Png
+.\tools\validate_capture_video.ps1 -CaptureDirectory <capture> -ExpectedFrames 750
+```
+
+`EventTimeMs` uses `actual_time_ms` from the event index, not the accelerated
+scoreboard clock. It selects the first sample at or after `event-15s` and exactly
+30 seconds of samples (event alignment is quantized to 40 ms at 25 fps).
+Extraction rejects insufficient footage and temporal gaps rather than padding
+or duplicating frames. New output folders are required to avoid stale images.
+
+`build_cosmos_capture_videos.ps1` also accepts direct video captures, converting
+their MKV masters to the existing H.264/YUV420 MP4 delivery format without PNG
+intermediates. That delivery conversion is lossy, just as in the prior PNG-to-MP4
+workflow: retain the MKV masters for exact depth/segmentation values. The Cosmos
+spec keeps Edge off, guidance 4.0, control guidance 1.0, 35 steps and seed 2026.
+
 The simulator can run a complete AI-versus-AI batch without team-selection,
 match-option, half-time, replay, pause, or game-over interaction. Add or update
 these keys in the config file passed to `gameplayfootball`:
@@ -193,6 +255,21 @@ taxonomy in `event_labels`, in addition to the events actually observed in
 time. The legacy normalized `match_duration` value is used only when the new
 setting is absent. Existing tracking exporters remain configurable through
 `blender_tracking_export_*` and `cosmos_capture_*`.
+
+The sample `data/football.config` is organized by responsibility. `random_seed`
+controls every simulator random source: use `-1` for a new run based on the
+clock, or a non-negative integer to reproduce a run (including random teams,
+player appearance and lighting). `match_lighting` accepts `random`, `day`, or
+`night`; the latter two disable lighting variation so generated captures are
+consistent.
+
+The segmentation control video labels visible painted field markings as
+`field_lines` in magenta `[255,0,255]`. This includes the touchlines, goal
+lines, halfway line, center circle, penalty and goal areas, penalty arcs,
+corner arcs, and spots already present in the pitch texture. The markings
+are classified only on the pitch surface, so players and the ball retain
+their existing labels when they occlude a line. `metadata.json` records the
+new color in `semantic_palette`.
 
 
 ## Problems? 

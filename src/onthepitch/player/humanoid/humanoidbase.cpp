@@ -8,6 +8,7 @@
 #include "humanoid_utils.hpp"
 
 #include "../playerbase.hpp"
+#include "../player.hpp"
 #include "../../match.hpp"
 
 #include "../../../main.hpp"
@@ -113,6 +114,15 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
   fullbodyNode->SetLocalMode(e_LocalMode_Absolute);
   fullbodyTargetNode->AddNode(fullbodyNode);
 
+  // Semantic identity comes from the simulation, never from jersey pixels or
+  // field side (teams switch sides). Goalkeepers retain their team's label.
+  const Player *teamPlayer = dynamic_cast<Player*>(player);
+  const std::string semanticClass = teamPlayer ?
+    (teamPlayer->GetTeamID() == 0 ? "home" : "away") : "official";
+  if (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false)) {
+    fullbodyNode->GetObject("fullbody")->SetProperty("capture_class", semanticClass.c_str());
+  }
+
   boost::intrusive_ptr< Resource<GeometryData> > bodyGeom = boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
   bodyGeom->resourceMutex.lock();
   std::vector < MaterializedTriangleMesh > &tmesh = bodyGeom->GetResource()->GetTriangleMeshesRef();
@@ -146,6 +156,9 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
 
   boost::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/players/hairstyles/" + player->GetPlayerData()->GetHairStyle() + ".ase", true, true);
   hairStyle = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject("hairstyle", e_ObjectType_Geometry));
+  if (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false)) {
+    hairStyle->SetProperty("capture_class", semanticClass.c_str());
+  }
 
   scene3D->CreateSystemObjects(hairStyle);
   hairStyle->SetLocalMode(e_LocalMode_Absolute);

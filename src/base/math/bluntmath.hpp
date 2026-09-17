@@ -28,7 +28,7 @@ namespace blunted {
   bool sign(real n);
   signed int signSide(real n); // returns -1 or 1
   bool is_odd(int n);
-  void randomseed();
+  void randomseed(unsigned int seed);
   real random(real min, real max);
 
   inline void fastrandomseed() {

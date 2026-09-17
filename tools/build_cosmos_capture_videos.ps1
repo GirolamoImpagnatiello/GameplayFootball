@@ -26,11 +26,15 @@ if ($FfmpegPath -eq "ffmpeg") {
 function Invoke-FfmpegSequence {
   param(
     [string]$InputDirectory,
-    [string]$OutputPath
+    [string]$OutputPath,
+    [string]$MasterVideo
   )
 
   $pattern = Join-Path $InputDirectory "frame_%06d.png"
   $args = @("-y", "-framerate", $Fps, "-start_number", $StartFrame, "-i", $pattern)
+  if ($MasterVideo -and (Test-Path -LiteralPath $MasterVideo)) {
+    $args = @('-y', '-i', $MasterVideo, '-vf', "trim=start_frame=$($StartFrame - 1),setpts=PTS-STARTPTS")
+  }
   if ($FrameCount -gt 0) {
     $args += @("-frames:v", $FrameCount)
   }
@@ -53,8 +57,8 @@ if (Test-Path -LiteralPath $metadataPath) {
   }
 }
 
-Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "rgb") -OutputPath (Join-Path $capture "control_rgb.mp4")
-Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "depth") -OutputPath (Join-Path $capture "control_depth.mp4")
-Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "seg") -OutputPath (Join-Path $capture "control_seg.mp4")
+Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "rgb") -OutputPath (Join-Path $capture "control_rgb.mp4") -MasterVideo (Join-Path $capture "control_rgb.mkv")
+Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "depth") -OutputPath (Join-Path $capture "control_depth.mp4") -MasterVideo (Join-Path $capture "control_depth.mkv")
+Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "seg") -OutputPath (Join-Path $capture "control_seg.mp4") -MasterVideo (Join-Path $capture "control_seg.mkv")
 
 Write-Host "Cosmos videos written under $capture"

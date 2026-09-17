@@ -129,6 +129,9 @@ void main(void) {
   vec3 baseDesaturated = vec3((base.r + base.g + base.b) / 3);
   base = baseDesaturated * 0.7 + base * 0.3;
   base *= vec3(0.9f, 1.0f, 1.2f) * brightness;
+  // Keep the pitch's texture color visible when directional light is weak.
+  if (abs(worldPosition.z) < 0.15 && abs(worldPosition.x) < 60.0 && abs(worldPosition.y) < 40.0)
+    base = texture2D(map_albedo, texCoord).xyz * 0.65f;
 
   // screen space ambient occlusion
   // normal-oriented hemisphere method, (c) john chapman
@@ -179,6 +182,10 @@ void main(void) {
   SSAO = SSAO * 1.5f - 0.5f; // exaggerate effect
   //SSAO *= SSAO; // exaggerate effect
   SSAO = clamp(SSAO, 0.0f, 1.0f);
+  // A flat pitch is not an occluder. Keep its ambient contribution stable
+  // instead of darkening the whole field through screen-space sampling.
+  if (abs(worldPosition.z) < 0.15 && abs(worldPosition.x) < 60.0 && abs(worldPosition.y) < 40.0)
+    SSAO = 1.0f;
   //SSAO = 1; //disable
 
 

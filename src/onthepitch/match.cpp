@@ -36,6 +36,10 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include <cstdlib>
+#ifdef WIN32
+#include <windows.h>
+#endif
 
 const unsigned int replaySize_ms = 10000;
 const unsigned int camPosSize = 150;//180; //130
@@ -596,6 +600,7 @@ Match::~Match() {
 void Match::Exit() {
   if (Verbose()) printf("exiting match.. ");
 
+  GetGraphicsSystem()->WaitForBackBufferSaves();
   FlushSoccerReplayExporter();
   FlushCosmosCaptureMetadata();
 
@@ -687,11 +692,19 @@ void Match::SetRandomSunParams() {
 
   if (Verbose()) printf("setting random sun params\n");
 
+  const std::string lightingMode = GetConfiguration()->Get("match_lighting", "random");
   float brightness = 1.0f;
 
   Vector3 sunPos = Vector3(-1.2f, 0.4f, 1.0f); // sane default
   float averageHeightMultiplier = 1.3f;
-  sunPos = Vector3(clamp(random(-1.7f, 1.7f), -1.0, 1.0), clamp(random(-1.7f, 1.7f), -1.0, 1.0), averageHeightMultiplier);
+  if (lightingMode == "day") {
+    sunPos = Vector3(-1.2f, 0.4f, 1.0f);
+  } else if (lightingMode == "night") {
+    sunPos = Vector3(-0.7f, 0.8f, 0.25f);
+    brightness = 0.35f;
+  } else {
+    sunPos = Vector3(clamp(random(-1.7f, 1.7f), -1.0, 1.0), clamp(random(-1.7f, 1.7f), -1.0, 1.0), averageHeightMultiplier);
+  }
   sunPos.Normalize();
   if (random(0, 1) > 0.5f && sunPos.coords[1] > 0.25f) sunPos.coords[1] = -sunPos.coords[1]; // sun more often on (default) camera side (coming from front == clearer lighting on players)
   sunNode->GetObject("sun")->SetPosition(sunPos * 10000.0f);
@@ -706,7 +719,9 @@ void Match::SetRandomSunParams() {
   float noonBias = pow(NormalizedClamp(sunPos.coords[2], 0.5f, 1.0f), 1.2f);
   Vector3 sunColor = sunColorNoon * noonBias + sunColorDusk * (1.0f - noonBias);
 
-  Vector3 randomAddition(random(-0.1, 0.1), random(-0.1, 0.1), random(-0.1, 0.1));
+  Vector3 randomAddition = lightingMode == "random"
+    ? Vector3(random(-0.1, 0.1), random(-0.1, 0.1), random(-0.1, 0.1))
+    : Vector3(0, 0, 0);
   randomAddition *= 1.2f;
   sunColor += randomAddition;
 
@@ -906,13 +921,46 @@ signed int Match::GetBestPossessionTeamID() {
 
 void Match::GameOver() {
   if (!datasetGameOverRecorded) {
+    cosmosCaptureComplete = true;
+    GetGraphicsSystem()->WaitForBackBufferSaves();
     RecordSoccerReplayPhaseEnd(matchPhase);
     FlushSoccerReplayExporter();
     FlushBlenderTrackingExporter();
     FlushCosmosCaptureMetadata();
+    ExtractCosmosEventClips();
     datasetGameOverRecorded = true;
   }
   gameOver = true;
+}
+
+void Match::ExtractCosmosEventClips() {
+  if (!cosmosCaptureEnabled || !GetConfiguration()->GetBool("cosmos_auto_extract_event_clips", false)) return;
+  if (GetConfiguration()->Get("cosmos_capture_format", "png") == "png") return;
+  const boost::filesystem::path capturePath(cosmosCaptureDirectory);
+  const boost::filesystem::path outputPath = boost::filesystem::path(
+    GetConfiguration()->Get("cosmos_event_clip_output_root", "output/event_clips")) / capturePath.filename();
+  std::string script = GetConfiguration()->Get("cosmos_event_clip_script", "../../tools/extract_event_clips.ps1");
+#ifdef WIN32
+  if (!boost::filesystem::path(script).is_absolute()) {
+    char executablePath[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameA(NULL, executablePath, MAX_PATH);
+    if (length > 0 && length < MAX_PATH) script = boost::filesystem::absolute(
+      boost::filesystem::path(script), boost::filesystem::path(executablePath).parent_path()).string();
+  }
+#endif
+  const std::string captureDirectory = boost::filesystem::absolute(capturePath).string();
+  const std::string clipOutputDirectory = boost::filesystem::absolute(outputPath).string();
+  std::ostringstream command;
+  command << "\"" << GetConfiguration()->Get("powershell_path", "powershell.exe")
+    << "\" -NoProfile -ExecutionPolicy Bypass -File \""
+    << script
+    << "\" -CaptureDirectory \"" << captureDirectory << "\" -OutputDirectory \""
+    << clipOutputDirectory << "\" -FfmpegPath \""
+    << GetConfiguration()->Get("cosmos_ffmpeg_path", "ffmpeg.exe") << "\"";
+  Log(e_Notice, "Match", "ExtractCosmosEventClips", "Extracting event clips before next match");
+  const int result = std::system(command.str().c_str());
+  if (result != 0) Log(e_Error, "Match", "ExtractCosmosEventClips", "Event clip extraction failed");
+  else Log(e_Notice, "Match", "ExtractCosmosEventClips", "Event clip extraction completed");
 }
 
 void Match::InitializeSoccerReplayExporter() {
@@ -1029,6 +1077,7 @@ void Match::RecordSoccerReplayPossession() {
 }
 
 void Match::ScheduleSoccerReplayFrameDump() {
+  if (!GetConfiguration()->GetBool("dataset_export_frames", true)) return;
   if (!datasetExporter || !datasetExporter->IsEnabled()) return;
   if (!IsSoccerReplayMainPhase(matchPhase)) return;
   if (pause) return;
@@ -1135,7 +1184,8 @@ void Match::InitializeCosmosCaptureExporter() {
   if (!cosmosCaptureEnabled) return;
 
   cosmosCaptureFps = clamp(GetConfiguration()->GetInt("cosmos_capture_fps", 30), 1, 120);
-  cosmosCaptureTargetFrames = std::max(1, GetConfiguration()->GetInt("cosmos_capture_frame_count", 121));
+  // Zero records the whole match; positive values are useful for short trials.
+  cosmosCaptureTargetFrames = std::max(0, GetConfiguration()->GetInt("cosmos_capture_frame_count", 121));
   cosmosCaptureSkipFrames = std::max(0, GetConfiguration()->GetInt("cosmos_capture_skip_frames", 0));
   cosmosCaptureFrameCount = 0;
   cosmosCaptureLastFrameBucket = cosmosCaptureSkipFrames - 1;
@@ -1171,6 +1221,9 @@ void Match::ScheduleCosmosFrameCapture() {
   if (cosmosCaptureFinalFrameScheduled) {
     cosmosCaptureComplete = true;
     FlushCosmosCaptureMetadata();
+    if (GetConfiguration()->GetBool("cosmos_capture_quit_when_complete", false)) {
+      EnvironmentManager::GetInstance().SignalQuit();
+    }
     return;
   }
 
@@ -1198,10 +1251,23 @@ void Match::ScheduleCosmosFrameCapture() {
   request.rgbFilename = (boost::filesystem::path(cosmosRgbDirectory) / frameFilename).string();
   request.depthFilename = (boost::filesystem::path(cosmosDepthDirectory) / frameFilename).string();
   request.segmentationFilename = (boost::filesystem::path(cosmosSegmentationDirectory) / frameFilename).string();
-  request.flushAfterCapture = cosmosCaptureFrameCount >= cosmosCaptureTargetFrames;
+  const std::string captureFormat = GetConfiguration()->Get("cosmos_capture_format", "png");
+  if (captureFormat == "video" || captureFormat == "video_and_png") {
+    request.rgbFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_rgb.mkv").string();
+    request.depthFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_depth.mkv").string();
+    request.segmentationFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_seg.mkv").string();
+    if (captureFormat == "video_and_png") {
+      ControlFrameCaptureRequest pngRequest;
+      pngRequest.rgbFilename = (boost::filesystem::path(cosmosRgbDirectory) / frameFilename).string();
+      pngRequest.depthFilename = (boost::filesystem::path(cosmosDepthDirectory) / frameFilename).string();
+      pngRequest.segmentationFilename = (boost::filesystem::path(cosmosSegmentationDirectory) / frameFilename).string();
+      GetGraphicsSystem()->RequestControlFrameCapture(pngRequest);
+    }
+  }
+  request.flushAfterCapture = cosmosCaptureTargetFrames > 0 && cosmosCaptureFrameCount >= cosmosCaptureTargetFrames;
   GetGraphicsSystem()->RequestControlFrameCapture(request);
 
-  if (cosmosCaptureFrameCount >= cosmosCaptureTargetFrames) {
+  if (request.flushAfterCapture) {
     cosmosCaptureFinalFrameScheduled = true;
   }
 }
@@ -1234,7 +1300,7 @@ void Match::FlushCosmosCaptureMetadata() {
       spec << "  \"num_frames\": " << cosmosCaptureFrameCount << ",\n";
       spec << "  \"fps\": " << cosmosCaptureFps << ",\n";
       spec << "  \"shift\": 10.0,\n";
-      spec << "  \"num_steps\": 50,\n";
+      spec << "  \"num_steps\": 35,\n";
       spec << "  \"seed\": 2026,\n";
       spec << "  \"num_video_frames_per_chunk\": " << cosmosCaptureFrameCount << ",\n";
       spec << "  \"num_conditional_frames\": 1,\n";
@@ -1242,8 +1308,8 @@ void Match::FlushCosmosCaptureMetadata() {
       spec << "  \"share_vision_temporal_positions\": true,\n";
       spec << "  \"negative_metadata_mode\": \"none\",\n";
       spec << "  \"negative_prompt_keep_metadata\": false,\n";
-      spec << "  \"guidance\": 3.0,\n";
-      spec << "  \"control_guidance\": 2.0,\n";
+      spec << "  \"guidance\": 4.0,\n";
+      spec << "  \"control_guidance\": 1.0,\n";
       spec << "  \"prompt_path\": \"prompt.json\",\n";
       spec << "  \"depth\": { \"control_path\": \"control_depth.mp4\" },\n";
       spec << "  \"seg\": { \"control_path\": \"control_seg.mp4\" }\n";
@@ -1256,6 +1322,16 @@ void Match::FlushCosmosCaptureMetadata() {
     if (metadata.is_open()) {
       metadata << "{\n";
       metadata << "  \"fps\": " << cosmosCaptureFps << ",\n";
+      const std::string format = GetConfiguration()->Get("cosmos_capture_format", "png");
+      metadata << "  \"capture_format\": " << Quote(format) << ",\n";
+      metadata << "  \"team_aware\": " << (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false) ? "true" : "false") << ",\n";
+      metadata << "  \"team_palette\": {\"home\": [0,0,255], \"away\": [255,0,0], \"official\": [0,255,255]},\n";
+      metadata << "  \"semantic_palette\": {\"field_lines\": [255,0,255], \"pitch\": [25,166,46], \"ball\": [255,242,46]},\n";
+      metadata << "  \"depth_encoding\": \"inverted_device_depth_uint8_same_as_png\",\n";
+      if (datasetExporter && datasetExporter->IsEnabled()) {
+        metadata << "  \"event_index\": " << Quote(boost::filesystem::absolute(
+          boost::filesystem::path(datasetExporter->GetOutputDirectory()) / "frame_index.json").string()) << ",\n";
+      }
       metadata << "  \"frame_count\": " << cosmosCaptureFrameCount << ",\n";
       metadata << "  \"skip_frames\": " << cosmosCaptureSkipFrames << ",\n";
       metadata << "  \"dropped_timing_buckets\": " << cosmosCaptureDroppedBuckets << ",\n";
@@ -1269,9 +1345,10 @@ void Match::FlushCosmosCaptureMetadata() {
       metadata << "  \"rgb_directory\": \"rgb\",\n";
       metadata << "  \"depth_directory\": \"depth\",\n";
       metadata << "  \"segmentation_directory\": \"seg\",\n";
-      metadata << "  \"rgb_video\": \"control_rgb.mp4\",\n";
-      metadata << "  \"depth_video\": \"control_depth.mp4\",\n";
-      metadata << "  \"segmentation_video\": \"control_seg.mp4\",\n";
+      const std::string extension = format == "png" ? ".mp4" : ".mkv";
+      metadata << "  \"rgb_video\": " << Quote("control_rgb" + extension) << ",\n";
+      metadata << "  \"depth_video\": " << Quote("control_depth" + extension) << ",\n";
+      metadata << "  \"segmentation_video\": " << Quote("control_seg" + extension) << ",\n";
       metadata << "  \"cosmos_spec\": \"cosmos_transfer_spec.json\"\n";
       metadata << "}\n";
     }

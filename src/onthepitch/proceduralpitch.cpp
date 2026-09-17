@@ -452,7 +452,12 @@ void GeneratePitch(int resX, int resY, int resSpecularX, int resSpecularY, int r
   }
 
   boost::thread pitchThread[4];
-  float grassNormalRepeatMultiplier = (random(0, 1) > 0.5f) ? 1.0f : 0.5f;
+  // The pitch texture supports two mowing patterns. Keep the random choice as
+  // the default so existing configurations retain their previous behaviour.
+  const std::string pitchPattern = GetConfiguration()->Get("match_pitch_pattern", "random");
+  float grassNormalRepeatMultiplier = 1.0f;
+  if (pitchPattern == "narrow") grassNormalRepeatMultiplier = 0.5f;
+  else if (pitchPattern != "wide") grassNormalRepeatMultiplier = (random(0, 1) > 0.5f) ? 1.0f : 0.5f;
   for (int i = 0; i < 4; i++) {
     pitchThread[i] = boost::thread(&CreateChunk, i + 1, resX, resY, resSpecularX, resSpecularY, resNormalX, resNormalY, grassNormalRepeatMultiplier);
   }

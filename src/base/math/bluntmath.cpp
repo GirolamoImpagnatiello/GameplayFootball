@@ -66,8 +66,8 @@ namespace blunted {
     return n & 1;
   }
 
-  void randomseed() {
-    rng.engine().seed(static_cast<unsigned int>(std::time(0)));
+  void randomseed(unsigned int seed) {
+    rng.engine().seed(seed);
   }
 
   inline real boostrandom() {

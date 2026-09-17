@@ -23,6 +23,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <set>
 
 using namespace std;
 
@@ -157,16 +158,32 @@ namespace blunted {
   }
 
   void Properties::SaveFile(const std::string &filename) const {
-    ofstream cfile;
-    cfile.open(filename.c_str(), ios::out);
-    map_Properties::const_iterator iter = properties.begin();
-    while (iter != properties.end()) {
-      std::string bla = "\"" + iter->first + "\" \"" + iter->second + "\"\n";
-      cfile << bla.c_str();
-
-      iter++;
+    // Keep the hand-written sections when settings are saved from the menu.
+    // Newly created settings are appended after the existing file.
+    ifstream existing(filename.c_str());
+    std::vector<std::string> lines;
+    std::set<std::string> written;
+    std::string line;
+    while (std::getline(existing, line)) {
+      const size_t firstQuote = line.find('"');
+      const size_t secondQuote = firstQuote == std::string::npos ? std::string::npos : line.find('"', firstQuote + 1);
+      if (firstQuote != std::string::npos && secondQuote != std::string::npos) {
+        const std::string key = line.substr(firstQuote + 1, secondQuote - firstQuote - 1);
+        map_Properties::const_iterator found = properties.find(key);
+        if (found != properties.end()) {
+          if (written.insert(key).second) lines.push_back("\"" + key + "\" \"" + found->second + "\"");
+          continue;
+        }
+      }
+      lines.push_back(line);
     }
-    cfile.close();
+    existing.close();
+
+    ofstream cfile(filename.c_str(), ios::out);
+    for (size_t i = 0; i < lines.size(); ++i) cfile << lines[i] << '\n';
+    for (map_Properties::const_iterator iter = properties.begin(); iter != properties.end(); ++iter) {
+      if (written.count(iter->first) == 0) cfile << "\"" << iter->first << "\" \"" << iter->second << "\"\n";
+    }
   }
 
   void Properties::Print() const {
