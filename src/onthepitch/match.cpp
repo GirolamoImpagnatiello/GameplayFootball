@@ -358,6 +358,8 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   cameraUserHeight = GetConfiguration()->GetReal("camera_height", _default_CameraHeight);
   cameraUserFOV = GetConfiguration()->GetReal("camera_fov", _default_CameraFOV);
   cameraUserAngleFactor = GetConfiguration()->GetReal("camera_anglefactor", _default_CameraAngleFactor);
+  cameraCornerCloseupEnabled = GetConfiguration()->GetBool("camera_corner_closeup_enabled", true);
+  cameraCornerCloseupDuration_ms = clamp(GetConfiguration()->GetInt("camera_corner_closeup_duration_ms", 1200), 0, 1500);
 
   autoUpdateIngameCamera = true;
 
@@ -382,7 +384,8 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
 
   std::list < boost::intrusive_ptr<Geometry> >::iterator iter = stadiumGeoms.begin();
   while (iter != stadiumGeoms.end()) {
-    boost::intrusive_ptr<Node> tmpNode = SplitGeometry(GetScene3D(), *iter, 24);
+    const bool labelStadiumMaterials = GetConfiguration()->GetBool("cosmos_segmentation_v2", true) && (*iter)->GetName() == "teststadium";
+    boost::intrusive_ptr<Node> tmpNode = SplitGeometry(GetScene3D(), *iter, 24, labelStadiumMaterials);
     tmpNode->SetLocalMode(e_LocalMode_Absolute);
     stadiumNode->AddNode(tmpNode);
 
@@ -1278,7 +1281,7 @@ void Match::FlushCosmosCaptureMetadata() {
   const boost::filesystem::path captureRoot(cosmosCaptureDirectory);
   const std::string prompt = GetConfiguration()->Get(
     "cosmos_capture_prompt",
-    "A photorealistic broadcast soccer match in a modern stadium, realistic grass, players, ball, lighting and camera motion.");
+    "A photorealistic broadcast soccer match in a modern stadium. Players move on a marked green pitch. Advertising boards and low barriers sit immediately beyond the touchline; spectators fill the stands behind them. Keep the physical spacing and occlusion between players, boards, barriers, and crowd consistent with the camera view.");
 
   {
     std::ofstream promptFile((captureRoot / "prompt.json").string().c_str(), std::ios::out | std::ios::trunc);
@@ -1325,8 +1328,16 @@ void Match::FlushCosmosCaptureMetadata() {
       const std::string format = GetConfiguration()->Get("cosmos_capture_format", "png");
       metadata << "  \"capture_format\": " << Quote(format) << ",\n";
       metadata << "  \"team_aware\": " << (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false) ? "true" : "false") << ",\n";
+      const bool segmentationV2 = GetConfiguration()->GetBool("cosmos_segmentation_v2", true);
+      metadata << "  \"segmentation_version\": " << (segmentationV2 ? 2 : 1) << ",\n";
       metadata << "  \"team_palette\": {\"home\": [0,0,255], \"away\": [255,0,0], \"official\": [0,255,255]},\n";
-      metadata << "  \"semantic_palette\": {\"field_lines\": [255,0,255], \"pitch\": [25,166,46], \"ball\": [255,242,46]},\n";
+      metadata << "  \"semantic_palette\": {\"field_lines\": [255,0,255], \"pitch\": [25,166,46], \"ball\": [255,242,46], \"goal\": [217,217,217], \"other\": [115,115,115]";
+      if (segmentationV2) {
+        metadata << ", \"advertising_board\": [255,128,0], \"stadium_barrier_or_wall\": [0,128,128], \"crowd\": [128,0,128], \"stands_structure\": [160,96,48]";
+      } else {
+        metadata << ", \"stadium\": [140,115,191]";
+      }
+      metadata << "},\n";
       metadata << "  \"depth_encoding\": \"inverted_device_depth_uint8_same_as_png\",\n";
       if (datasetExporter && datasetExporter->IsEnabled()) {
         metadata << "  \"event_index\": " << Quote(boost::filesystem::absolute(
@@ -1488,6 +1499,32 @@ void Match::UpdateIngameCamera() {
       pause = true;
       sig_OnExtendedReplayMoment(this);
     }
+  }
+
+  // Broadcast cut to the corner taker while the restart is being prepared.
+  // The final 500 ms remain on the wide camera so the kick starts in context.
+  const RefereeBuffer &restart = referee->GetBuffer();
+  if (cameraCornerCloseupEnabled && cameraCornerCloseupDuration_ms > 0 &&
+      !IsInPlay() && !IsGoalScored() && restart.active &&
+      restart.desiredSetPiece == e_SetPiece_Corner && restart.taker &&
+      actualTime_ms >= restart.prepareTime &&
+      actualTime_ms - restart.prepareTime < static_cast<unsigned long>(cameraCornerCloseupDuration_ms) &&
+      actualTime_ms + 500 < restart.startTime) {
+    const Vector3 takerPos = restart.taker->GetPosition();
+    const Vector3 ballPos = ball->Predict(0).Get2D();
+    Vector3 target = takerPos * 0.75f + ballPos * 0.25f;
+    target.coords[2] = 1.0f;
+
+    // Shoot from inside the pitch toward the corner, above the touchline boards.
+    const float cornerX = signSide(ballPos.coords[0]);
+    const float cornerY = signSide(ballPos.coords[1]);
+    cameraNodePosition = target + Vector3(-cornerX * 8.0f, -cornerY * 6.0f, 3.5f);
+    const Vector3 toTarget = target - cameraNodePosition;
+    cameraNodeOrientation.SetAngleAxis(toTarget.GetAngle2D() + 1.5f * pi, Vector3(0, 0, 1));
+    cameraOrientation.SetAngleAxis(0.39f * pi, Vector3(1, 0, 0));
+    cameraFOV = 23.0f;
+    cameraNearCap = 0.5f;
+    cameraFarCap = 220.0f;
   }
 }
 

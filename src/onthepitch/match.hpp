@@ -289,6 +289,8 @@ class Match {
     float cameraUserHeight;
     float cameraUserFOV;
     float cameraUserAngleFactor;
+    bool cameraCornerCloseupEnabled;
+    int cameraCornerCloseupDuration_ms;
 
     boost::shared_ptr<AnimCollection> anims;
 

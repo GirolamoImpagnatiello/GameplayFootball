@@ -57,7 +57,7 @@ namespace blunted {
     return newIndex.geomData;
   }
 
-  boost::intrusive_ptr<Node> SplitGeometry(boost::shared_ptr<Scene3D> scene3D, boost::intrusive_ptr<Geometry> source, float gridSize) {
+  boost::intrusive_ptr<Node> SplitGeometry(boost::shared_ptr<Scene3D> scene3D, boost::intrusive_ptr<Geometry> source, float gridSize, bool labelStadiumMaterials) {
 
     boost::intrusive_ptr<Node> resultNode(new Node(source->GetName()));
 
@@ -90,6 +90,7 @@ namespace blunted {
       float x = geomVec.at(i).x;
       float y = geomVec.at(i).y;
       boost::intrusive_ptr<Geometry> geom = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject(source->GetName() + " gridGeom @ " + int_to_str(x) + ", " + int_to_str(y), e_ObjectType_Geometry));
+      if (labelStadiumMaterials) geom->SetProperty("capture_stadium_materials", "true");
       scene3D->CreateSystemObjects(geom);
       geom->SetGeometryData(geomVec.at(i).geomData);
       resultNode->AddObject(geom);

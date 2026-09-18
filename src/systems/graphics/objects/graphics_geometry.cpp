@@ -46,6 +46,10 @@ namespace blunted {
         if (label == "home") return Vector3(0, 0, 1);
         if (label == "away") return Vector3(1, 0, 0);
         if (label == "official") return Vector3(0, 1, 1);
+        if (label == "advertising_board") return Vector3(1.0f, 128.0f / 255.0f, 0);
+        if (label == "stadium_barrier_or_wall") return Vector3(0, 128.0f / 255.0f, 128.0f / 255.0f);
+        if (label == "crowd") return Vector3(128.0f / 255.0f, 0, 128.0f / 255.0f);
+        if (label == "stands_structure") return Vector3(160.0f / 255.0f, 96.0f / 255.0f, 48.0f / 255.0f);
       }
       std::string source = LowerString(geometry->GetName());
       if (geometry->GetGeometryData()) source += " " + LowerString(geometry->GetGeometryData()->GetIdentString());
@@ -58,6 +62,16 @@ namespace blunted {
       if (Contains(source, "card")) return Vector3(1.00f, 0.55f, 0.05f);
 
       return Vector3(0.45f, 0.45f, 0.45f);
+    }
+
+    Vector3 DetermineMeshSemanticColor(boost::intrusive_ptr<Geometry> geometry, const Material &material) {
+      if (!geometry->PropertyExists("capture_stadium_materials")) return DetermineSemanticColor(geometry);
+      if (!material.diffuseTexture) return Vector3(160.0f / 255.0f, 96.0f / 255.0f, 48.0f / 255.0f);
+      const std::string texture = LowerString(material.diffuseTexture->GetIdentString());
+      if (texture.find("ad_") == 0 || texture == "abstractads.png") return Vector3(1.0f, 128.0f / 255.0f, 0);
+      if (texture == "crowd01.png") return Vector3(128.0f / 255.0f, 0, 128.0f / 255.0f);
+      if (texture == "floor01wall.png" || texture == "floor02wall.png" || texture == "hekje.png") return Vector3(0, 128.0f / 255.0f, 128.0f / 255.0f);
+      return Vector3(160.0f / 255.0f, 96.0f / 255.0f, 48.0f / 255.0f);
     }
 
   }
@@ -294,6 +308,7 @@ namespace blunted {
       }
 
       vbIndex.material = r3dMaterial;
+      vbIndex.semanticColor = DetermineMeshSemanticColor(geometry, *material);
       caller->vertexBufferIndices.push_back(vbIndex);
     }
 
@@ -352,6 +367,7 @@ namespace blunted {
     int currentSize = 0;
 
     if (updateIndices) caller->vertexBufferIndices.clear();
+    std::list<VertexBufferIndex>::iterator existingIndex = caller->vertexBufferIndices.begin();
 
     for (unsigned int i = 0; i < triangleMeshes.size(); i++) {
 
@@ -398,6 +414,7 @@ namespace blunted {
 
         // this code makes this version only work on meshes that are the same size/materialorder as their previous version
         vbIndex.material = r3dMaterial;
+        vbIndex.semanticColor = DetermineMeshSemanticColor(geometry, *material);
 
         if ((!usesIndices && indices.size() > 0) || usesIndices) { // include the first time using indices
           vbIndex.startIndex = startIndicesIndex;
@@ -414,6 +431,9 @@ namespace blunted {
 
         caller->vertexBufferIndices.push_back(vbIndex);
 
+      } else if (existingIndex != caller->vertexBufferIndices.end()) {
+        existingIndex->semanticColor = DetermineMeshSemanticColor(geometry, triangleMeshes.at(i).material);
+        ++existingIndex;
       }
 
     }

@@ -23,6 +23,15 @@ Referee::Referee(Match *match) : match(match) {
   buffer.endPhase = true;
   buffer.active = true;
 
+  // Reproducible camera demo: replace the opening kick-off with a corner.
+  if (GetConfiguration()->GetBool("debug_start_with_corner", false)) {
+    buffer.desiredSetPiece = e_SetPiece_Corner;
+    buffer.prepareTime = 2000;
+    buffer.startTime = buffer.prepareTime + 2000;
+    buffer.restartPos = Vector3(-match->GetTeam(0)->GetSide() * pitchHalfW, -pitchHalfH, 0);
+    buffer.teamID = 0;
+  }
+
   foul.foulPlayer = 0;
   foul.foulType = 0;
   foul.advantage = false;

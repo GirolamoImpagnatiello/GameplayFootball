@@ -43,6 +43,7 @@ namespace blunted {
     int startIndex;
     int size;
     Renderer3DMaterial material;
+    Vector3 semanticColor;
   };
 
   struct VertexBufferQueueEntry {

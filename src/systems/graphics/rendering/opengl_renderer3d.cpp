@@ -1490,12 +1490,24 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
         int count;
       };
       BufferChunk bufferChunk;
+      Vector3 currentSemanticColor = queueEntry->semanticColor;
 
       std::deque<VertexBufferIndex>::const_iterator vertexBufferIter = queueEntry->vertexBufferIndices.begin();
       while (vertexBufferIter != queueEntry->vertexBufferIndices.end()) {
 
         //VertexBufferIndex *vbIndex = (*vertexBufferIter).get();
         const VertexBufferIndex *vbIndex = &(*vertexBufferIter);
+        if (renderMode == e_RenderMode_Semantic &&
+            (vbIndex->semanticColor.coords[0] != currentSemanticColor.coords[0] ||
+             vbIndex->semanticColor.coords[1] != currentSemanticColor.coords[1] ||
+             vbIndex->semanticColor.coords[2] != currentSemanticColor.coords[2])) {
+          if (sequential) {
+            DrawBufferChunk(bufferChunk.startIndex, bufferChunk.count);
+            sequential = false;
+          }
+          currentSemanticColor = vbIndex->semanticColor;
+          SetUniformFloat3("semantic", "semanticColor", currentSemanticColor.coords[0], currentSemanticColor.coords[1], currentSemanticColor.coords[2]);
+        }
 
         if (renderMode != e_RenderMode_GeometryOnly) {
           int diffuseTextureID = 0;

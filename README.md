@@ -271,6 +271,18 @@ are classified only on the pitch surface, so players and the ball retain
 their existing labels when they occlude a line. `metadata.json` records the
 new color in `semantic_palette`.
 
+`cosmos_segmentation_v2=true` also labels stadium submeshes by material during
+the semantic render pass: advertising boards `[255,128,0]`, barriers and walls
+`[0,128,128]`, crowd-textured seating `[128,0,128]`, and stands structure
+`[160,96,48]`. Existing team, official, ball, pitch, and field-line colors are
+unchanged. The crowd class follows the stadium's crowd-textured meshes; it
+does not distinguish individual spectators. `metadata.json` includes
+`segmentation_version` and the full palette. Set the option to `false` to
+export the original single-color stadium mask for an A/B comparison with the
+same seed. `cosmos_capture_prompt` controls the caption written to `prompt.json`;
+event-specific captures can override it in their own config file. Keep the
+lossless MKV segmentation master when exact palette values matter.
+
 
 ## Problems? 
 If you have any problems please open an issue. 
