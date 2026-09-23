@@ -97,6 +97,12 @@ void Referee::Process() {
         whistle[3]->SetGain(0.3 * GetConfiguration()->GetReal("audio_volume", 0.5));
         whistle[3]->Poke(e_SystemType_Audio);
 
+        if (match->GetMatchPhase() == e_MatchPhase_2ndHalf &&
+            !GetConfiguration()->GetBool("match_extra_time_enabled", true)) {
+          match->GameOver();
+          return;
+        }
+
         buffer.desiredSetPiece = e_SetPiece_KickOff;
         buffer.stopTime = match->GetActualTime_ms();
         buffer.prepareTime = match->GetActualTime_ms() + 3000;
@@ -165,6 +171,7 @@ void Referee::Process() {
           buffer.teamID = abs(lastTouchTeam->GetID() - 1);
         }
 
+        match->NotifyRestart(buffer.desiredSetPiece, buffer.teamID);
         buffer.active = true;
       }
     }
@@ -188,6 +195,7 @@ void Referee::Process() {
           if (ballPos.coords[1] >  0) buffer.restartPos.coords[1] = pitchHalfH;
           if (ballPos.coords[1] <= 0) buffer.restartPos.coords[1] = -pitchHalfH;
           buffer.restartPos.coords[2] = 0;
+          match->NotifyRestart(buffer.desiredSetPiece, buffer.teamID);
           buffer.active = true;
         }
       }
@@ -242,6 +250,7 @@ void Referee::Process() {
   if (match->IsInSetPiece()) {
     // check if set piece has been taken
     if (buffer.taker->TouchAnim() && !buffer.taker->TouchPending()) {
+      match->NotifySetPieceTaken(buffer.desiredSetPiece, buffer.teamID);
       buffer.active = false;
       match->StopSetPiece();
       match->GetTeam(0)->GetController()->PrepareSetPiece(e_SetPiece_None);
@@ -268,6 +277,33 @@ void Referee::PrepareSetPiece(e_SetPiece setPiece) {
   match->GetTeam(1)->GetController()->PrepareSetPiece(setPiece, buffer.teamID);
 
   buffer.taker = match->GetTeam(buffer.teamID)->GetController()->GetPieceTaker();
+}
+
+void Referee::StartDebugOpenPlay() {
+  buffer.active = false;
+  buffer.desiredSetPiece = e_SetPiece_None;
+  buffer.taker = 0;
+  buffer.endPhase = false;
+  match->StopSetPiece();
+  match->StartPlay();
+  if (match->GetMatchPhase() == e_MatchPhase_PreMatch) {
+    match->SetMatchPhase(e_MatchPhase_1stHalf);
+  }
+}
+
+void Referee::ForceDebugCorner(int attackingTeamID, const Vector3 &restartPos,
+                               unsigned long prepareDelay_ms) {
+  match->StopPlay();
+  match->StopSetPiece();
+  buffer.desiredSetPiece = e_SetPiece_Corner;
+  buffer.teamID = clamp(attackingTeamID, 0, 1);
+  buffer.stopTime = match->GetActualTime_ms();
+  buffer.prepareTime = buffer.stopTime + prepareDelay_ms;
+  buffer.startTime = buffer.prepareTime + 2000;
+  buffer.restartPos = restartPos;
+  buffer.taker = 0;
+  buffer.endPhase = false;
+  buffer.active = true;
 }
 
 void Referee::AlterSetPiecePrepareTime(unsigned long newTime_ms) {
@@ -298,6 +334,7 @@ void Referee::BallTouched() {
           buffer.restartPos = playerIter->second;
           buffer.teamID = abs(lastTouchTeamID - 1);
           buffer.active = true;
+          match->NotifyOffside(playerIter->first);
           match->SpamMessage("offside!");
           break;
         } else break;
@@ -331,14 +368,20 @@ void Referee::TripNotice(Player *tripee, Player *tripper, int tackleType) {
 
   if (buffer.active) return;
 
+  const float foulSensitivity = clamp(
+      GetConfiguration()->GetReal("referee_foul_sensitivity", 1.0f), 0.7f, 1.5f);
+  const Vector3 opponentGoal(-tripee->GetTeam()->GetSide() * pitchHalfW, 0, 0);
+  const bool dangerousAttackingArea =
+      (tripee->GetPosition() - opponentGoal).GetLength() < 30.0f;
+
   if (tackleType == 2) { // standing tackle
-    if (tripee->GetTeam()->GetFadingTeamPossessionAmount() > 1.1 &&
+    if (tripee->GetTeam()->GetFadingTeamPossessionAmount() > 1.1f / foulSensitivity &&
         (tripper->GetCurrentFunctionType() == e_FunctionType_Interfere || tripper->GetCurrentFunctionType() == e_FunctionType_Sliding) &&
-        (tripee->GetPosition() - match->GetBall()->Predict(0).Get2D()).GetLength() < 2.0 &&
+        (tripee->GetPosition() - match->GetBall()->Predict(0).Get2D()).GetLength() < 2.0f * foulSensitivity &&
         tripper->GetTeam()->GetID() != tripee->GetTeam()->GetID()) {
       // uooooga uooooga foul!
       foul.foulType = 1;
-      foul.advantage = true;
+      foul.advantage = !dangerousAttackingArea;
       foul.foulPlayer = tripper;
       foul.foulVictim = tripee;
       foul.foulTime = match->GetActualTime_ms();
@@ -365,11 +408,11 @@ void Referee::TripNotice(Player *tripee, Player *tripper, int tackleType) {
       // from behind?
       severity += (tripee->GetPosition() - tripper->GetPosition()).GetNormalized(0).GetDotProduct(tripee->GetDirectionVec()) * 0.5 + 0.5;
 
-      if (severity > 1.0) {
+      if (severity > 1.0f / foulSensitivity) {
         // uooooga uooooga foul!
         //printf("sliding! %lu ms ago\n", match->GetActualTime_ms() - tripper->GetLastTouchTime_ms());
         foul.foulType = 1;
-        foul.advantage = true;
+        foul.advantage = !dangerousAttackingArea;
         foul.foulPlayer = tripper;
         foul.foulVictim = tripee;
         foul.foulTime = match->GetActualTime_ms();
@@ -435,6 +478,7 @@ bool Referee::CheckFoul() {
     }
     buffer.teamID = foul.foulVictim->GetTeam()->GetID();
     buffer.active = true;
+    match->NotifyFoul(foul.foulPlayer, foul.foulVictim, foul.foulType);
     std::string spamMessage = "foul!";
     if (foul.foulType == 2) {
       spamMessage.append(" yellow card");

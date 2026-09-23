@@ -381,7 +381,12 @@ void AI_GetBestDribbleMovement(Match *match, int thisPlayerID, const MentalImage
   Vector3 myPos = player->GetPosition();
   Vector3 myMov = player->GetMovement();
 
-  float offenseFactor = 0.7f + teamTactics.userProperties.GetReal("dribble_offensiveness", 0.5f) * 0.05f + AI_GetMindSet(player->GetDynamicFormationEntry().role) * 0.05f;
+  const float offensiveAggression = clamp(
+      GetConfiguration()->GetReal("ai_offensive_aggression", 1.0f), 0.5f, 2.0f);
+  float offenseFactor = 0.7f +
+      teamTactics.userProperties.GetReal("dribble_offensiveness", 0.5f) * 0.05f +
+      AI_GetMindSet(player->GetDynamicFormationEntry().role) * 0.05f +
+      (offensiveAggression - 1.0f) * 0.75f;
   float powerMultiplier = 1.0f; // should alter (average) resulting velocity
 
   float future_sec = 0.25f;
@@ -419,7 +424,7 @@ void AI_GetBestDribbleMovement(Match *match, int thisPlayerID, const MentalImage
     spot.origin = oppPos;
     spot.magnetType = e_MagnetType_Repel;
     spot.decayType = e_DecayType_Variable;
-    spot.power = 2.0f * powerMultiplier;//1.0f;
+    spot.power = (2.0f / offensiveAggression) * powerMultiplier;
     spot.scale = 10.0f;//16.0f;
     spot.exp = 1.0f;//0.7f;
     forceField.push_back(spot);

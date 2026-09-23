@@ -87,6 +87,8 @@ class MenuTask : public Gui2Task {
     bool automaticQuitWhenDone;
     int automaticMatchCount;
     int automaticMatchesCompleted;
+    std::string previousAutomaticHomeTeamID;
+    std::string previousAutomaticAwayTeamID;
 
     Lockable<QueuedFixture> queuedFixture; // todo: we can probably unlock this stuff
 

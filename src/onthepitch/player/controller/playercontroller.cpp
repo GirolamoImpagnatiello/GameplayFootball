@@ -25,6 +25,7 @@
 
 #include "../../AIsupport/mentalimage.hpp"
 #include "../../AIsupport/AIfunctions.hpp"
+#include "../../../main.hpp"
 
 #include "../../../main.hpp"
 
@@ -389,16 +390,27 @@ void PlayerController::_InterfereCommand(PlayerCommandQueue &commandQueue, bool 
 void PlayerController::_SlidingCommand(PlayerCommandQueue &commandQueue) {
   if (team->GetHumanGamerCount() != 0) return;
   if (match->GetBallRetainer() != 0) return;
-  if (CouldWinABallDuelLikeliness() < 0.7f) return;
+  const float challengeAggression = clamp(
+      GetConfiguration()->GetReal("ai_defensive_challenge_aggression", 1.0f), 0.7f, 1.5f);
+  const Vector3 ownGoal(team->GetSide() * pitchHalfW, 0, 0);
+  const bool emergencyChallenge = _oppPlayer &&
+      (_oppPlayer->GetPosition() - ownGoal).GetLength() < 30.0f;
+  const float requiredDuelLikeliness = emergencyChallenge ? 0.44f : 0.70f;
+  if (CouldWinABallDuelLikeliness() < requiredDuelLikeliness / challengeAggression) return;
 
-  if (!teamHasBestPossession && possessionAmount < 0.6f && match->GetDesignatedPossessionPlayer() != player && oppTeamHasPossession) {
+  const float possessionThreshold = emergencyChallenge ? 0.85f : 0.60f;
+  if (!teamHasBestPossession && possessionAmount < possessionThreshold * challengeAggression &&
+      match->GetDesignatedPossessionPlayer() != player && oppTeamHasPossession) {
 
     Vector3 ballPos = match->GetMentalImage(20)->GetBallPrediction(200);
     Vector3 playerPos = player->GetPosition() + player->GetMovement() * 0.2;
     Vector3 oppPos = _oppPlayer->GetPosition() + _oppPlayer->GetMovement() * 0.2;
 
     float ballDist = (playerPos - ballPos).GetLength();
-    if ((ballDist > 0.7f && ballDist < 1.6f && oppTimeNeededToGetToBall > 260) || (ballDist > 0.6f && ballDist < 1.8f && _oppPlayer->GetCurrentFunctionType() == e_FunctionType_Shot && _oppPlayer->TouchPending())) {
+    const float normalChallengeReach = (emergencyChallenge ? 1.9f : 1.6f) * challengeAggression;
+    if ((ballDist > 0.7f && ballDist < normalChallengeReach && oppTimeNeededToGetToBall > 260) ||
+        (ballDist > 0.6f && ballDist < 1.8f * challengeAggression &&
+         _oppPlayer->GetCurrentFunctionType() == e_FunctionType_Shot && _oppPlayer->TouchPending())) {
 
       // no opp in the way?
       PlayerCommand command;

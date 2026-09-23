@@ -61,6 +61,10 @@ class Team {
     unsigned long GetLastTouchTime_ms() { return lastTouchPlayer ? lastTouchPlayer->GetLastTouchTime_ms() : 0; }
     e_TouchType GetLastTouchType() { return lastTouchType; }
     float GetLastTouchBias(int decay_ms, unsigned long time_ms = 0) { return lastTouchPlayer ? lastTouchPlayer->GetLastTouchBias(decay_ms, time_ms) : 0; }
+    void RegisterPass(Player *passer, Player *receiver);
+    Player *GetLastPasser() const { return lastPasser; }
+    Player *GetLastPassReceiver() const { return lastPassReceiver; }
+    unsigned long GetLastPassTime_ms() const { return lastPassTime_ms; }
 
     void ResetSituation(const Vector3 &focusPos);
 
@@ -70,6 +74,7 @@ class Team {
     void DeselectPlayer(Player *player);
 
     void RelaxFatigue(float howMuch);
+    bool ApplyAutomaticSubstitution(std::string &outgoingName, std::string &incomingName);
 
     void Process();
     void PreparePutBuffers(unsigned long snapshotTime_ms);
@@ -101,6 +106,7 @@ class Team {
 
     std::vector<Player*> players;
     int activePlayerCount;
+    int nextSubstituteIndex;
 
     boost::intrusive_ptr<Node> teamNode;
     boost::intrusive_ptr<Node> playerNode;
@@ -114,6 +120,9 @@ class Team {
     Player *lastTouchPlayers[e_TouchType_SIZE];
     Player *lastTouchPlayer;
     e_TouchType lastTouchType;
+    Player *lastPasser;
+    Player *lastPassReceiver;
+    unsigned long lastPassTime_ms;
 
     boost::intrusive_ptr < Resource<Surface> > kit;
 

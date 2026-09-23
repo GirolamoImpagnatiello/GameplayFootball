@@ -523,6 +523,18 @@ float Player::GetStaminaStat() const {
   return playerData->GetStat("physical_stamina");
 }
 
+void Player::ApplySubstitution(PlayerData *substituteData) {
+  if (!substituteData) return;
+
+  playerData = substituteData;
+  fatigueFactorInv = 1.0f;
+  cards = 0;
+  cardEffectiveTime_ms = 0;
+  possessionDuration_ms = 0;
+  lastTouchTime_ms = 0;
+  lastTouchType = e_TouchType_None;
+}
+
 float Player::GetStat(const char *name) const {
 
   //if (team->GetHumanGamerCount() != 0) return 1.0f;

@@ -892,6 +892,28 @@ void TeamAIController::PrepareSetPiece(e_SetPiece setPiece, int takerTeamID) {
   if (isTakerTeam) {
     taker = AI_GetClosestPlayer(team, match->GetBall()->Predict(0).Get2D(), false);
 
+    const Vector3 setPiecePos = match->GetBall()->Predict(0).Get2D();
+    const Vector3 opponentGoal(-team->GetSide() * pitchHalfW, 0, 0);
+    const bool directFreeKick = setPiece == e_SetPiece_FreeKick &&
+        (setPiecePos - opponentGoal).GetLength() >= 17.0f &&
+        (setPiecePos - opponentGoal).GetLength() <= 29.0f &&
+        fabs(setPiecePos.coords[1]) < 12.0f;
+    if (directFreeKick || setPiece == e_SetPiece_Corner) {
+      float bestSpecialistRating = -1.0f;
+      for (unsigned int i = 0; i < players.size(); ++i) {
+        Player *candidate = players.at(i);
+        const float rating = directFreeKick
+            ? candidate->GetStat("technical_shot") * 0.70f +
+                  candidate->GetStat("physical_shotpower") * 0.30f
+            : candidate->GetStat("technical_highpass") * 0.75f +
+                  candidate->GetStat("mental_vision") * 0.25f;
+        if (rating > bestSpecialistRating) {
+          bestSpecialistRating = rating;
+          taker = candidate;
+        }
+      }
+    }
+
     if (setPiece == e_SetPiece_ThrowIn || setPiece == e_SetPiece_KickOff) {
       taker->ResetPosition(match->GetBall()->Predict(0).Get2D() + match->GetBall()->Predict(0).Get2D().GetNormalized(Vector3(0, -team->GetSide(), 0)) * 0.3f, match->GetBall()->Predict(0).Get2D());
     } else if (setPiece == e_SetPiece_FreeKick) {

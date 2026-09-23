@@ -155,7 +155,8 @@ namespace blunted {
         }
       }
       if (!depthFilenames.empty()) {
-        renderer->SaveDepthBuffer(depthFilenames, view.width, view.height);
+        renderer->SaveDepthBuffer(depthFilenames, view.width, view.height,
+                                  buffer.cameraNearCap, buffer.cameraFarCap);
       }
 
       renderer->UseShader("semantic");

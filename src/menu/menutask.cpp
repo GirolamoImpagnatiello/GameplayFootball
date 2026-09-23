@@ -235,11 +235,28 @@ void MenuTask::ConfigureAutomaticFixture() {
   std::string awayTeamID = GetConfiguration()->Get("automatic_away_team_id", "8");
 
   if (GetConfiguration()->GetBool("automatic_random_teams", true)) {
-    const unsigned int homeIndex = static_cast<unsigned int>(rand()) % teamIDs.size();
-    unsigned int awayIndex = static_cast<unsigned int>(rand()) % (teamIDs.size() - 1);
-    if (awayIndex >= homeIndex) ++awayIndex;
-    homeTeamID = teamIDs.at(homeIndex);
-    awayTeamID = teamIDs.at(awayIndex);
+    // Avoid modulo bias and do not immediately repeat the same pairing in a
+    // batch (including with home and away reversed) when an alternative exists.
+    const unsigned int fixtureCount = static_cast<unsigned int>(teamIDs.size() * (teamIDs.size() - 1));
+    unsigned int fixtureIndex = static_cast<unsigned int>(random(0.0f, static_cast<float>(fixtureCount)));
+    if (fixtureIndex >= fixtureCount) fixtureIndex = fixtureCount - 1;
+
+    for (unsigned int attempt = 0; attempt < fixtureCount; ++attempt) {
+      const unsigned int homeIndex = fixtureIndex / static_cast<unsigned int>(teamIDs.size() - 1);
+      unsigned int awayIndex = fixtureIndex % static_cast<unsigned int>(teamIDs.size() - 1);
+      if (awayIndex >= homeIndex) ++awayIndex;
+      homeTeamID = teamIDs.at(homeIndex);
+      awayTeamID = teamIDs.at(awayIndex);
+
+      const bool repeatsPreviousPairing =
+          (homeTeamID == previousAutomaticHomeTeamID && awayTeamID == previousAutomaticAwayTeamID) ||
+          (homeTeamID == previousAutomaticAwayTeamID && awayTeamID == previousAutomaticHomeTeamID);
+      if (!repeatsPreviousPairing) break;
+      fixtureIndex = (fixtureIndex + 1) % fixtureCount;
+    }
+
+    previousAutomaticHomeTeamID = homeTeamID;
+    previousAutomaticAwayTeamID = awayTeamID;
   } else {
     if (std::find(teamIDs.begin(), teamIDs.end(), homeTeamID) == teamIDs.end() ||
         std::find(teamIDs.begin(), teamIDs.end(), awayTeamID) == teamIDs.end() ||

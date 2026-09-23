@@ -242,7 +242,8 @@ these keys in the config file passed to `gameplayfootball`:
 
 `automatic_match_count` is the number of matches to acquire. With
 `automatic_random_teams=true`, two distinct teams are selected from the database
-before every match; the configured team IDs are ignored. Set it to `false` to
+before every match; the configured team IDs are ignored, and the same pairing
+is not repeated twice in a row even with home and away reversed. Set it to `false` to
 reuse the two fixed IDs for the whole batch. Every match gets its own dataset
 directory containing `annotations.json`, `frame_index.json`, `frames/`, and
 event clips. `annotations.json` includes the complete 24-label SoccerReplay-1988
@@ -256,12 +257,62 @@ time. The legacy normalized `match_duration` value is used only when the new
 setting is absent. Existing tracking exporters remain configurable through
 `blender_tracking_export_*` and `cosmos_capture_*`.
 
+Set `match_extra_time_enabled=false` to finish after the second half regardless
+of the score. The default is `true` for compatibility with older configurations.
+
 The sample `data/football.config` is organized by responsibility. `random_seed`
 controls every simulator random source: use `-1` for a new run based on the
-clock, or a non-negative integer to reproduce a run (including random teams,
+high-resolution clock, or a non-negative integer to reproduce a run (including random teams,
 player appearance and lighting). `match_lighting` accepts `random`, `day`, or
 `night`; the latter two disable lighting variation so generated captures are
 consistent.
+
+`ai_offensive_aggression` controls how readily AI teams attempt progressive
+passes and assists. `1.0` is the conservative baseline; values around `1.25` to
+`1.5` encourage vertical play. Shot selection is controlled separately by
+`ai_shot_max_distance` and `ai_shot_min_quality`; quality accounts for distance,
+angle, shooting lane, nearby pressure, body and movement balance, ball stability,
+and shooting technique. A clear pass to a better scoring position is preferred
+over the shot. `ai_final_third_decision_ms` prevents attackers from holding the
+ball until the chance disappears, while `ai_shot_accuracy_assist` reduces the
+animation-layer error only after the AI has selected a credible shot;
+`ai_shot_height` controls the low trajectory used for those finishes. The
+aggression range is `0.5` to `2.0`.
+
+Pass selection also rejects routine passes from an outfield player to its own
+goalkeeper, strongly penalizes backward recycling in attacking areas, and keeps
+a short pass history to prevent immediate two-player ping-pong. From wide final-
+third positions, a reachable teammate in the box is treated as a crossing
+target and receives a high pass; attackers and wide midfielders make supporting
+runs into the area instead of waiting outside it.
+
+Open-play passing now checks the projected offside line at ball contact and
+excludes receivers who are clearly beyond it, while off-ball runners leave a
+small acceleration margin. Reliable forward passes gain priority over purely
+lateral circulation. Central free kicks 17–29 meters from goal are taken as
+direct shots; wide attacking free kicks and corners seek an in-box aerial
+receiver with heading ability. The optional 30-meter shot limit still requires
+balance, a clear lane and shooting skill for attempts from outside the box.
+
+`ai_cross_aggression` raises or lowers the preference for genuine high crosses
+from wide attacking positions. `ai_defensive_challenge_aggression` controls how
+readily CPU defenders attempt a tackle, while `referee_foul_sensitivity`
+controls how readily physical contacts are called. Together these settings can
+increase corners, free kicks and penalties through actual play; they never emit
+an event label unless the corresponding restart is awarded by the referee.
+
+Set `ai_automatic_substitutions=true` to replace the most fatigued outfield
+player on each team at the start of the second half. The number of changes per
+team is controlled by `ai_halftime_substitutions_per_team` (0 to 3). These are
+real squad changes for gameplay statistics and fatigue and emit the SoccerReplay
+`substitution` event.
+
+Shot outcomes are connected to the SoccerReplay exporter: goalkeeper touches,
+goal-line restarts and corners generate `saved by goal-keeper`, `shot off
+target`, `corner`, and `lead to corner` annotations as appropriate.
+Actual fouls, cards, penalties, free kicks, off-sides, defensive clearances,
+balls out of play and the full-time summary are exported as their canonical
+SoccerReplay-1988 labels as well.
 
 The segmentation control video labels visible painted field markings as
 `field_lines` in magenta `[255,0,255]`. This includes the touchlines, goal
@@ -282,6 +333,15 @@ export the original single-color stadium mask for an A/B comparison with the
 same seed. `cosmos_capture_prompt` controls the caption written to `prompt.json`;
 event-specific captures can override it in their own config file. Keep the
 lossless MKV segmentation master when exact palette values matter.
+
+Depth capture defaults to a global metric mapping. The renderer reconstructs
+camera-space Z from the OpenGL depth buffer using each frame's projection near
+and far planes, then maps the fixed interval configured by
+`cosmos_depth_near_m` and `cosmos_depth_far_m` to 8-bit grayscale. Near remains
+bright and far remains dark. The fixed interval is shared by all frames and
+cameras; no per-frame normalization is applied. Set
+`cosmos_depth_mapping=legacy_device` only to reproduce the earlier inverted
+device-depth export.
 
 
 ## Problems? 

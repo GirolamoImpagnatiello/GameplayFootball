@@ -51,6 +51,28 @@ void DefaultOffenseStrategy::RequestInput(const MentalImage *mentalImage, Vector
     controller->AddDefensiveComponent(desiredPosition, pow(clamp(1.3f - mindset - controller->GetFadingTeamPossessionAmount(), 0.0f, 1.0f), 0.7f));
   }
 
+  // Once possession is established beyond midfield, the striker must attack
+  // the space behind the back line. Without this run the passing AI has no
+  // receiver in a genuine finishing position and recycles possession forever.
+  const float offensiveAggression = clamp(
+      GetConfiguration()->GetReal("ai_offensive_aggression", 1.0f), 0.5f, 2.0f);
+  const float possessionRunBias = NormalizedClamp(
+      controller->GetFadingTeamPossessionAmount(), 0.55f, 1.25f);
+  const float ballProgress = NormalizedClamp(
+      match->GetBall()->Predict(0).coords[0] * -team->GetSide(), -8.0f, 34.0f);
+  const float penetrationBias = clamp(
+      possessionRunBias * ballProgress * (0.55f + offensiveAggression * 0.20f),
+      0.0f, 0.82f);
+  if (penetrationBias > 0.0f) {
+    const float ballY = match->GetBall()->Predict(0).coords[1];
+    const bool wideFinalThird = ballProgress > 0.52f && fabs(ballY) > 10.0f;
+    Vector3 runTarget((pitchHalfW - (wideFinalThird ? 9.0f : 14.0f)) * -team->GetSide(),
+                      wideFinalThird ? clamp(-ballY * 0.22f, -6.0f, 6.0f)
+                                     : clamp(ballY * 0.30f, -8.0f, 8.0f),
+                      0.0f);
+    desiredPosition = desiredPosition * (1.0f - penetrationBias) + runTarget * penetrationBias;
+  }
+
   if (GetDebugMode() == e_DebugMode_AI) {
     int scrX, scrY;
     GetDebugOverlayCoord(match, desiredPosition, scrX, scrY);

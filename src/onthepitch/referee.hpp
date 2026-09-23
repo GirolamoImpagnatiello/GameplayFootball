@@ -47,6 +47,12 @@ class Referee {
 
     void PrepareSetPiece(e_SetPiece setPiece);
 
+    // Deterministic broadcast test helpers. These are only used when the
+    // corresponding debug scenario is enabled in the configuration.
+    void StartDebugOpenPlay();
+    void ForceDebugCorner(int attackingTeamID, const Vector3 &restartPos,
+                          unsigned long prepareDelay_ms);
+
     const RefereeBuffer &GetBuffer() { return buffer; };
 
     void AlterSetPiecePrepareTime(unsigned long newTime_ms);

@@ -92,6 +92,7 @@ class Player : public PlayerBase {
 
     float GetStaminaStat() const;
     virtual float GetStat(const char *name) const;
+    void ApplySubstitution(PlayerData *substituteData);
 
     virtual void ResetSituation(const Vector3 &focusPos);
 

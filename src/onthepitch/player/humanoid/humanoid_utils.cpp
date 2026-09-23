@@ -455,6 +455,9 @@ Vector3 GetShotVector(Match *match, Player *player, const Vector3 &nextStartPos,
   // best case result
 
   float desiredHeight = 0.05f;
+  if (player->GetTeam()->GetHumanGamerCount() == 0) {
+    desiredHeight = clamp(GetConfiguration()->GetReal("ai_shot_height", 0.075f), 0.04f, 0.12f);
+  }
   Vector3 desiredShot = (currentAnim->originatingCommand.touchInfo.desiredDirection.Get2D() + Vector3(0, 0, desiredHeight)).GetNormalized() * power;
   if (Verbose()) {
     desiredShot.Print();
@@ -491,6 +494,15 @@ Vector3 GetShotVector(Match *match, Player *player, const Vector3 &nextStartPos,
   float worstCaseFactor = random(0.0f, 1.0f);
   worstCaseFactor =
       std::pow(worstCaseFactor, player->GetStat("technical_shot") * 0.7f);
+
+  // AI shot selection already rejects poor body shape, pressure and range.
+  // Keep some technical variance, but do not let the animation layer turn a
+  // well-selected finish into the same scatter as a speculative attempt.
+  if (player->GetTeam()->GetHumanGamerCount() == 0) {
+    const float accuracyAssist = clamp(
+        GetConfiguration()->GetReal("ai_shot_accuracy_assist", 0.75f), 0.0f, 0.85f);
+    worstCaseFactor *= 1.0f - accuracyAssist;
+  }
 
   Vector3 shot = desiredShot * (1.0f - worstCaseFactor) +
                  worstCaseShot * worstCaseFactor;

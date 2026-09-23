@@ -34,6 +34,8 @@
 
 #include "SDL2/SDL_ttf.h"
 
+#include <chrono>
+
 #if defined(WIN32) && defined(__MINGW32__)
 #undef main
 #endif
@@ -288,9 +290,16 @@ int main(int argc, char **argv) {
   // A non-negative configured seed makes batches and captures reproducible.
   // -1 (the default) keeps the historical time-based behaviour.
   int configuredSeed = config->GetInt("random_seed", -1);
-  unsigned int randomSeed = configuredSeed >= 0
-    ? static_cast<unsigned int>(configuredSeed)
-    : static_cast<unsigned int>(time(NULL));
+  // Seconds are not granular enough for dataset jobs: two simulator processes
+  // launched in the same second would otherwise replay the exact same teams
+  // and match. Keep explicit seeds reproducible, but give automatic seeds
+  // enough resolution to distinguish rapid consecutive launches.
+  unsigned int randomSeed = static_cast<unsigned int>(configuredSeed);
+  if (configuredSeed < 0) {
+    const unsigned long long clockTicks = static_cast<unsigned long long>(
+      std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    randomSeed = static_cast<unsigned int>(clockTicks ^ (clockTicks >> 32));
+  }
   srand(randomSeed);
   rand(); // mingw32? buggy compiler? first value seems bogus
   randomseed(randomSeed); // for the boost random

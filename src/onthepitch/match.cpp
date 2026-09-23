@@ -205,6 +205,13 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   datasetLastPossessionEventTime_ms = 0;
   datasetLastFrameHalf = 0;
   datasetLastFrameSecond = -1;
+  datasetPendingShotTeamID = -1;
+  datasetPendingShotPlayer = 0;
+  datasetPendingShotTime_ms = 0;
+  datasetPendingShotMatchTime_ms = 0;
+  datasetPendingShotHalf = 0;
+  datasetPendingShotTimeStamp.clear();
+  datasetPendingShotSaved = false;
   datasetGameOverRecorded = false;
   cosmosCaptureEnabled = false;
   cosmosCaptureComplete = false;
@@ -360,6 +367,16 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   cameraUserAngleFactor = GetConfiguration()->GetReal("camera_anglefactor", _default_CameraAngleFactor);
   cameraCornerCloseupEnabled = GetConfiguration()->GetBool("camera_corner_closeup_enabled", true);
   cameraCornerCloseupDuration_ms = clamp(GetConfiguration()->GetInt("camera_corner_closeup_duration_ms", 1200), 0, 1500);
+  cameraCornerView = GetConfiguration()->Get("camera_corner_view", "wide");
+  cameraCornerViewActive = false;
+  cameraCutPending = false;
+  debugSaveCornerSequenceEnabled = GetConfiguration()->GetBool("debug_save_to_corner_sequence", false);
+  debugSaveCornerSequenceStarted = false;
+  debugSaveCornerDeflected = false;
+  debugSaveCornerForced = false;
+  debugSaveCornerSequenceStart_ms = 0;
+  debugSaveCornerCameraShot = -1;
+  debugSaveCornerDefendingTeamID = 0;
 
   autoUpdateIngameCamera = true;
 
@@ -915,6 +932,23 @@ void Match::SetMatchPhase(e_MatchPhase newMatchPhase) {
   if (matchPhase == e_MatchPhase_2ndHalf) {
     teams[0]->RelaxFatigue(0.05f);
     teams[1]->RelaxFatigue(0.05f);
+
+    if (GetConfiguration()->GetBool("ai_automatic_substitutions", false)) {
+      const int changesPerTeam = clamp(
+          GetConfiguration()->GetInt("ai_halftime_substitutions_per_team", 1), 0, 3);
+      for (int teamID = 0; teamID < 2; ++teamID) {
+        for (int change = 0; change < changesPerTeam; ++change) {
+          std::string outgoingName;
+          std::string incomingName;
+          if (!teams[teamID]->ApplyAutomaticSubstitution(outgoingName, incomingName)) break;
+          RecordSoccerReplayEvent(
+              dataset::soccerreplay1988::labels::Substitution,
+              incomingName + " replaces " + outgoingName + " for " +
+                  matchData->GetTeamData(teamID)->GetName() + ".",
+              "[PLAYER_IN] replaces [PLAYER_OUT] for [TEAM].");
+        }
+      }
+    }
   }
 }
 
@@ -926,6 +960,13 @@ void Match::GameOver() {
   if (!datasetGameOverRecorded) {
     cosmosCaptureComplete = true;
     GetGraphicsSystem()->WaitForBackBufferSaves();
+    const std::string homeTeam = matchData->GetTeamData(0)->GetName();
+    const std::string awayTeam = matchData->GetTeamData(1)->GetName();
+    RecordSoccerReplayEvent(
+        dataset::soccerreplay1988::labels::StatisticsAndSummary,
+        "Full-time summary: " + homeTeam + " " + int_to_str(GetScore(0)) + " - " +
+            int_to_str(GetScore(1)) + " " + awayTeam + ".",
+        "Full-time summary: [HOME_TEAM] [HOME_SCORE] - [AWAY_SCORE] [AWAY_TEAM].");
     RecordSoccerReplayPhaseEnd(matchPhase);
     FlushSoccerReplayExporter();
     FlushBlenderTrackingExporter();
@@ -1050,6 +1091,179 @@ void Match::RecordSoccerReplayGoal(bool ownGoal) {
   datasetExporter->SetScore(matchData->GetGoalCount(0), matchData->GetGoalCount(1));
   datasetExporter->RecordEvent(eventDescription);
   datasetExporter->FlushAnnotationsOnly();
+
+  datasetPendingShotTeamID = -1;
+  datasetPendingShotPlayer = 0;
+  datasetPendingShotSaved = false;
+}
+
+void Match::RecordSoccerReplayEvent(const std::string &label,
+                                    const std::string &text,
+                                    const std::string &anonymizedText) {
+  if (!datasetExporter || !datasetExporter->IsEnabled()) return;
+  if (!IsSoccerReplayMainPhase(matchPhase)) return;
+
+  dataset::soccerreplay1988::EventDescription eventDescription;
+  eventDescription.half = GetSoccerReplayHalf(matchPhase);
+  eventDescription.time_stamp = FormatSoccerReplayTimeStamp(matchTime_ms, matchPhase);
+  eventDescription.comments_type = label;
+  eventDescription.comments_text = text;
+  eventDescription.comments_text_anonymized = anonymizedText;
+  eventDescription.match_time_ms = matchTime_ms;
+  eventDescription.actual_time_ms = actualTime_ms;
+
+  if (datasetExporter->RecordEvent(eventDescription)) {
+    datasetExporter->FlushAnnotationsOnly();
+  }
+}
+
+bool Match::HasRecentPendingShot() const {
+  return datasetPendingShotTeamID >= 0 &&
+         actualTime_ms <= datasetPendingShotTime_ms + 6000;
+}
+
+void Match::NotifyShot(Player *shooter) {
+  if (!shooter) return;
+  datasetPendingShotTeamID = shooter->GetTeamID();
+  datasetPendingShotPlayer = shooter;
+  datasetPendingShotTime_ms = actualTime_ms;
+  datasetPendingShotMatchTime_ms = matchTime_ms;
+  datasetPendingShotHalf = GetSoccerReplayHalf(matchPhase);
+  datasetPendingShotTimeStamp = FormatSoccerReplayTimeStamp(matchTime_ms, matchPhase);
+  datasetPendingShotSaved = false;
+}
+
+void Match::NotifyGoalkeeperSave(Player *keeper) {
+  if (!keeper || !HasRecentPendingShot() || datasetPendingShotSaved) return;
+  if (keeper->GetTeamID() == datasetPendingShotTeamID) return;
+
+  std::string keeperName;
+  if (keeper->GetPlayerData()) {
+    keeperName = keeper->GetPlayerData()->GetFirstName() + " " + keeper->GetPlayerData()->GetLastName();
+  }
+  const std::string defendingTeam = matchData->GetTeamData(keeper->GetTeamID())->GetName();
+  const std::string text = keeperName.empty()
+      ? "Shot saved by the goalkeeper of " + defendingTeam + "."
+      : "Shot saved by " + keeperName + " for " + defendingTeam + ".";
+  RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::SavedByGoalKeeper,
+                          text,
+                          keeperName.empty() ? "Shot saved by the goalkeeper of [TEAM]."
+                                             : "Shot saved by [PLAYER] for [TEAM].");
+  datasetPendingShotSaved = true;
+}
+
+void Match::NotifyRestart(e_SetPiece setPiece, int restartingTeamID) {
+  const bool recentShot = HasRecentPendingShot();
+  const std::string restartingTeam =
+      (restartingTeamID >= 0 && restartingTeamID < 2)
+          ? matchData->GetTeamData(restartingTeamID)->GetName()
+          : "";
+
+  if (setPiece == e_SetPiece_Corner || setPiece == e_SetPiece_GoalKick ||
+      setPiece == e_SetPiece_ThrowIn) {
+    RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::BallOutOfPlay,
+                            "Ball out of play; restart for " + restartingTeam + ".",
+                            "Ball out of play; restart for [TEAM].");
+  }
+
+  if (setPiece == e_SetPiece_Corner) {
+    if (recentShot) {
+      RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::LeadToCorner,
+                              "Attacking action leads to a corner for " + restartingTeam + ".",
+                              "Attacking action leads to a corner for [TEAM].");
+    }
+  } else if (setPiece == e_SetPiece_GoalKick && recentShot && !datasetPendingShotSaved) {
+    const std::string shootingTeam = matchData->GetTeamData(datasetPendingShotTeamID)->GetName();
+    std::string shooterName;
+    if (datasetPendingShotPlayer && datasetPendingShotPlayer->GetPlayerData()) {
+      shooterName = datasetPendingShotPlayer->GetPlayerData()->GetFirstName() + " " +
+                    datasetPendingShotPlayer->GetPlayerData()->GetLastName();
+    }
+    if (datasetExporter && datasetExporter->IsEnabled() && IsSoccerReplayMainPhase(matchPhase)) {
+      dataset::soccerreplay1988::EventDescription shotEvent;
+      shotEvent.half = datasetPendingShotHalf;
+      shotEvent.time_stamp = datasetPendingShotTimeStamp;
+      shotEvent.comments_type = dataset::soccerreplay1988::labels::ShotOffTarget;
+      shotEvent.comments_text = shooterName.empty() ? "Shot off target by " + shootingTeam + "."
+                                                  : "Shot off target by " + shooterName + " for " + shootingTeam + ".";
+      shotEvent.comments_text_anonymized = shooterName.empty() ? "Shot off target by [TEAM]."
+                                                         : "Shot off target by [PLAYER] for [TEAM].";
+      shotEvent.match_time_ms = datasetPendingShotMatchTime_ms;
+      shotEvent.actual_time_ms = datasetPendingShotTime_ms;
+      if (datasetExporter->RecordEvent(shotEvent)) datasetExporter->FlushAnnotationsOnly();
+    }
+  }
+
+  if (setPiece == e_SetPiece_Corner || setPiece == e_SetPiece_GoalKick ||
+      setPiece == e_SetPiece_KickOff || setPiece == e_SetPiece_ThrowIn) {
+    datasetPendingShotTeamID = -1;
+    datasetPendingShotPlayer = 0;
+    datasetPendingShotSaved = false;
+  }
+}
+
+void Match::NotifySetPieceTaken(e_SetPiece setPiece, int takingTeamID) {
+  if (takingTeamID < 0 || takingTeamID > 1) return;
+  const std::string teamName = matchData->GetTeamData(takingTeamID)->GetName();
+  if (setPiece == e_SetPiece_Corner) {
+    RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::Corner,
+                            "Corner taken by " + teamName + ".", "Corner taken by [TEAM].");
+  } else if (setPiece == e_SetPiece_ThrowIn) {
+    RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::ThrowIn,
+                            "Throw-in taken by " + teamName + ".", "Throw-in taken by [TEAM].");
+  } else if (setPiece == e_SetPiece_FreeKick) {
+    RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::FreeKick,
+                            "Free kick taken by " + teamName + ".", "Free kick taken by [TEAM].");
+  } else if (setPiece == e_SetPiece_Penalty) {
+    RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::Penalty,
+                            "Penalty taken by " + teamName + ".", "Penalty taken by [TEAM].");
+  }
+}
+
+void Match::NotifyFoul(Player *offender, Player *victim, int foulType) {
+  if (!offender || !victim) return;
+
+  const std::string offendingTeam = matchData->GetTeamData(offender->GetTeamID())->GetName();
+  const std::string victimTeam = matchData->GetTeamData(victim->GetTeamID())->GetName();
+  if (foulType == 2) {
+    const bool secondYellow = offender->GetCards() == 1;
+    RecordSoccerReplayEvent(secondYellow
+                                ? dataset::soccerreplay1988::labels::SecondYellowCard
+                                : dataset::soccerreplay1988::labels::YellowCard,
+                            secondYellow ? "Second yellow card for " + offendingTeam + "."
+                                         : "Yellow card for " + offendingTeam + ".",
+                            secondYellow ? "Second yellow card for [TEAM]."
+                                         : "Yellow card for [TEAM].");
+  } else if (foulType == 3) {
+    RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::RedCard,
+                            "Red card for " + offendingTeam + ".",
+                            "Red card for [TEAM].");
+  } else {
+    RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::FoulNoCard,
+                            "Foul by " + offendingTeam + " on " + victimTeam + ".",
+                            "Foul by [TEAM] on [TEAM].");
+  }
+}
+
+void Match::NotifyOffside(Player *player) {
+  if (!player) return;
+  const std::string teamName = matchData->GetTeamData(player->GetTeamID())->GetName();
+  RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::OffSide,
+                          "Off-side against " + teamName + ".",
+                          "Off-side against [TEAM].");
+}
+
+void Match::NotifyClearance(Player *player, const Vector3 &ballMovement) {
+  if (!player || !IsInPlay() || IsInSetPiece() || ballMovement.GetLength() < 15.0f) return;
+  const Vector3 ownGoal(pitchHalfW * player->GetTeam()->GetSide(), 0, 0);
+  if ((player->GetPosition() - ownGoal).GetLength() > 30.0f) return;
+  const Vector3 awayFromOwnGoal(-player->GetTeam()->GetSide(), 0, 0);
+  if (ballMovement.GetNormalized(0).GetDotProduct(awayFromOwnGoal) < 0.25f) return;
+
+  const std::string teamName = matchData->GetTeamData(player->GetTeamID())->GetName();
+  RecordSoccerReplayEvent(dataset::soccerreplay1988::labels::Clearance,
+                          "Defensive clearance by " + teamName + ".",
+                          "Defensive clearance by [TEAM].");
 }
 
 void Match::RecordSoccerReplayPossession() {
@@ -1296,23 +1510,23 @@ void Match::FlushCosmosCaptureMetadata() {
     std::ofstream spec((captureRoot / "cosmos_transfer_spec.json").string().c_str(), std::ios::out | std::ios::trunc);
     if (spec.is_open()) {
       spec << "{\n";
-      spec << "  \"name\": \"gameplayfootball_transfer_depth_seg\",\n";
+      spec << "  \"name\": " << Quote(GetConfiguration()->Get("cosmos_test_name", "gameplayfootball_transfer_depth_seg")) << ",\n";
       spec << "  \"model_mode\": \"video2video\",\n";
       spec << "  \"resolution\": \"720\",\n";
       spec << "  \"aspect_ratio\": \"16,9\",\n";
       spec << "  \"num_frames\": " << cosmosCaptureFrameCount << ",\n";
       spec << "  \"fps\": " << cosmosCaptureFps << ",\n";
-      spec << "  \"shift\": 10.0,\n";
-      spec << "  \"num_steps\": 35,\n";
-      spec << "  \"seed\": 2026,\n";
+      spec << "  \"shift\": " << GetConfiguration()->GetReal("cosmos_shift", 7.0f) << ",\n";
+      spec << "  \"num_steps\": " << GetConfiguration()->GetInt("cosmos_num_steps", 35) << ",\n";
+      spec << "  \"seed\": " << GetConfiguration()->GetInt("cosmos_inference_seed", 2026) << ",\n";
       spec << "  \"num_video_frames_per_chunk\": " << cosmosCaptureFrameCount << ",\n";
       spec << "  \"num_conditional_frames\": 1,\n";
       spec << "  \"num_first_chunk_conditional_frames\": 0,\n";
       spec << "  \"share_vision_temporal_positions\": true,\n";
       spec << "  \"negative_metadata_mode\": \"none\",\n";
       spec << "  \"negative_prompt_keep_metadata\": false,\n";
-      spec << "  \"guidance\": 4.0,\n";
-      spec << "  \"control_guidance\": 1.0,\n";
+      spec << "  \"guidance\": " << GetConfiguration()->GetReal("cosmos_guidance", 4.0f) << ",\n";
+      spec << "  \"control_guidance\": " << GetConfiguration()->GetReal("cosmos_control_guidance", 1.0f) << ",\n";
       spec << "  \"prompt_path\": \"prompt.json\",\n";
       spec << "  \"depth\": { \"control_path\": \"control_depth.mp4\" },\n";
       spec << "  \"seg\": { \"control_path\": \"control_seg.mp4\" }\n";
@@ -1338,7 +1552,13 @@ void Match::FlushCosmosCaptureMetadata() {
         metadata << ", \"stadium\": [140,115,191]";
       }
       metadata << "},\n";
-      metadata << "  \"depth_encoding\": \"inverted_device_depth_uint8_same_as_png\",\n";
+      const std::string depthMapping = GetConfiguration()->Get("cosmos_depth_mapping", "linear_metric");
+      metadata << "  \"depth_encoding\": " << Quote(depthMapping == "linear_metric" ?
+        "linear_metric_uint8_near_white_far_black" : "inverted_device_depth_uint8_same_as_png") << ",\n";
+      if (depthMapping == "linear_metric") {
+        metadata << "  \"depth_near_m\": " << GetConfiguration()->GetReal("cosmos_depth_near_m", 1.0f) << ",\n";
+        metadata << "  \"depth_far_m\": " << GetConfiguration()->GetReal("cosmos_depth_far_m", 220.0f) << ",\n";
+      }
       if (datasetExporter && datasetExporter->IsEnabled()) {
         metadata << "  \"event_index\": " << Quote(boost::filesystem::absolute(
           boost::filesystem::path(datasetExporter->GetOutputDirectory()) / "frame_index.json").string()) << ",\n";
@@ -1378,6 +1598,114 @@ void Match::SetCameraParams(float zoom, float height, float fov, float angleFact
   cameraUserHeight = height;
   cameraUserFOV = fov;
   cameraUserAngleFactor = angleFactor;
+}
+
+void Match::ProcessDebugSaveCornerSequence() {
+  if (!debugSaveCornerSequenceEnabled) return;
+
+  if (!debugSaveCornerSequenceStarted) {
+    debugSaveCornerSequenceStarted = true;
+    debugSaveCornerSequenceStart_ms = actualTime_ms;
+
+    // Build a repeatable attacking situation in front of one goal. The ball
+    // travels toward the keeper before being redirected over the goal line.
+    debugSaveCornerDefendingTeamID = 0;
+    Team *defendingTeam = GetTeam(debugSaveCornerDefendingTeamID);
+    const int attackingTeamID = abs(debugSaveCornerDefendingTeamID - 1);
+    const float goalSide = defendingTeam->GetSide();
+    const Vector3 goalPos(goalSide * pitchHalfW, 0.0f, 0.0f);
+    const Vector3 shotPos(goalSide * (pitchHalfW - 18.0f), -4.0f, 0.35f);
+
+    ResetSituation(shotPos.Get2D());
+    referee->StartDebugOpenPlay();
+
+    std::vector<Player*> attackers;
+    GetTeam(attackingTeamID)->GetActivePlayers(attackers);
+    Player *shooter = 0;
+    for (unsigned int i = 0; i < attackers.size(); ++i) {
+      if (attackers[i]->GetFormationEntry().role != e_PlayerRole_GK) {
+        shooter = attackers[i];
+        break;
+      }
+    }
+    if (shooter) {
+      shooter->ResetPosition(shotPos.Get2D() - Vector3(goalSide * 1.2f, 0, 0), goalPos);
+    }
+
+    ball->SetPosition(shotPos);
+    ball->SetMomentum(Vector3(goalSide * 23.0f, 4.8f, 2.2f));
+  }
+
+  const unsigned long elapsed_ms = actualTime_ms - debugSaveCornerSequenceStart_ms;
+
+  if (!debugSaveCornerDeflected && elapsed_ms >= 1000) {
+    debugSaveCornerDeflected = true;
+    Team *defendingTeam = GetTeam(debugSaveCornerDefendingTeamID);
+    const float goalSide = defendingTeam->GetSide();
+    Player *keeper = 0;
+    std::vector<Player*> defenders;
+    defendingTeam->GetActivePlayers(defenders);
+    for (unsigned int i = 0; i < defenders.size(); ++i) {
+      if (defenders[i]->GetFormationEntry().role == e_PlayerRole_GK) {
+        keeper = defenders[i];
+        break;
+      }
+    }
+    if (keeper) defendingTeam->SetLastTouchPlayer(keeper, e_TouchType_Accidental);
+    else SetLastTouchTeamID(debugSaveCornerDefendingTeamID, e_TouchType_Accidental);
+
+    // Continue the ball visibly away from goal after the keeper's intervention.
+    Vector3 deflectionPos(goalSide * (pitchHalfW - 1.2f), -7.0f, 1.1f);
+    ball->SetPosition(deflectionPos);
+    ball->SetMomentum(Vector3(goalSide * 3.0f, -13.0f, 3.2f));
+  }
+
+  if (!debugSaveCornerForced && elapsed_ms >= 2200) {
+    debugSaveCornerForced = true;
+    const int attackingTeamID = abs(debugSaveCornerDefendingTeamID - 1);
+    const float goalSide = GetTeam(debugSaveCornerDefendingTeamID)->GetSide();
+    referee->ForceDebugCorner(attackingTeamID,
+                              Vector3(goalSide * pitchHalfW, -pitchHalfH, 0),
+                              1200);
+  }
+}
+
+void Match::ApplyDebugSaveCornerCamera() {
+  if (!debugSaveCornerSequenceEnabled || !debugSaveCornerSequenceStarted) return;
+
+  const unsigned long elapsed_ms = actualTime_ms - debugSaveCornerSequenceStart_ms;
+  // Shot 0: normal wide action. Shot 1: keeper/save reaction. Shot 2:
+  // normal broadcast again; the existing corner camera adds two more cuts.
+  const int requestedShot = (elapsed_ms >= 900 && elapsed_ms < 2200) ? 1 :
+                            (elapsed_ms >= 2200 ? 2 : 0);
+  if (requestedShot != debugSaveCornerCameraShot) {
+    debugSaveCornerCameraShot = requestedShot;
+    cameraCutPending = true;
+  }
+  if (requestedShot != 1) return;
+
+  Team *defendingTeam = GetTeam(debugSaveCornerDefendingTeamID);
+  Player *keeper = 0;
+  std::vector<Player*> defenders;
+  defendingTeam->GetActivePlayers(defenders);
+  for (unsigned int i = 0; i < defenders.size(); ++i) {
+    if (defenders[i]->GetFormationEntry().role == e_PlayerRole_GK) {
+      keeper = defenders[i];
+      break;
+    }
+  }
+  if (!keeper) return;
+
+  const float goalSide = defendingTeam->GetSide();
+  Vector3 target = keeper->GetPosition() * 0.75f + ball->Predict(0).Get2D() * 0.25f;
+  target.coords[2] = 1.0f;
+  cameraNodePosition = target + Vector3(-goalSide * 10.0f, -8.0f, 5.0f);
+  const Vector3 toTarget = target - cameraNodePosition;
+  cameraNodeOrientation.SetAngleAxis(toTarget.GetAngle2D() + 1.5f * pi, Vector3(0, 0, 1));
+  cameraOrientation.SetAngleAxis(0.42f * pi, Vector3(1, 0, 0));
+  cameraFOV = 32.0f;
+  cameraNearCap = 0.8f;
+  cameraFarCap = 220.0f;
 }
 
 void Match::UpdateIngameCamera() {
@@ -1504,26 +1832,39 @@ void Match::UpdateIngameCamera() {
   // Broadcast cut to the corner taker while the restart is being prepared.
   // The final 500 ms remain on the wide camera so the kick starts in context.
   const RefereeBuffer &restart = referee->GetBuffer();
-  if (cameraCornerCloseupEnabled && cameraCornerCloseupDuration_ms > 0 &&
+  const bool cornerViewActiveNow = cameraCornerCloseupEnabled && cameraCornerCloseupDuration_ms > 0 &&
       !IsInPlay() && !IsGoalScored() && restart.active &&
       restart.desiredSetPiece == e_SetPiece_Corner && restart.taker &&
       actualTime_ms >= restart.prepareTime &&
       actualTime_ms - restart.prepareTime < static_cast<unsigned long>(cameraCornerCloseupDuration_ms) &&
-      actualTime_ms + 500 < restart.startTime) {
+      actualTime_ms + 500 < restart.startTime;
+  if (cornerViewActiveNow != cameraCornerViewActive) {
+    cameraCornerViewActive = cornerViewActiveNow;
+    cameraCutPending = true;
+  }
+  if (cornerViewActiveNow) {
     const Vector3 takerPos = restart.taker->GetPosition();
     const Vector3 ballPos = ball->Predict(0).Get2D();
     Vector3 target = takerPos * 0.75f + ballPos * 0.25f;
     target.coords[2] = 1.0f;
 
-    // Shoot from inside the pitch toward the corner, above the touchline boards.
     const float cornerX = signSide(ballPos.coords[0]);
     const float cornerY = signSide(ballPos.coords[1]);
-    cameraNodePosition = target + Vector3(-cornerX * 8.0f, -cornerY * 6.0f, 3.5f);
+    if (cameraCornerView == "wide") {
+      // A wide frontal shot from inside the pitch. The camera faces the
+      // corner taker without turning the player into an extreme foreground.
+      cameraNodePosition = target + Vector3(-cornerX * 25.0f, -cornerY * 18.0f, 13.0f);
+      cameraFOV = 38.0f;
+      cameraNearCap = 1.0f;
+    } else {
+      // Original close shot from inside the pitch toward the corner.
+      cameraNodePosition = target + Vector3(-cornerX * 8.0f, -cornerY * 6.0f, 3.5f);
+      cameraFOV = 23.0f;
+      cameraNearCap = 0.5f;
+    }
     const Vector3 toTarget = target - cameraNodePosition;
     cameraNodeOrientation.SetAngleAxis(toTarget.GetAngle2D() + 1.5f * pi, Vector3(0, 0, 1));
-    cameraOrientation.SetAngleAxis(0.39f * pi, Vector3(1, 0, 0));
-    cameraFOV = 23.0f;
-    cameraNearCap = 0.5f;
+    cameraOrientation.SetAngleAxis(0.37f * pi, Vector3(1, 0, 0));
     cameraFarCap = 220.0f;
   }
 }
@@ -1551,6 +1892,8 @@ void Match::Process() {
   }
 
   if (!pause) {
+
+    ProcessDebugSaveCornerSequence();
 
     if (IsInPlay()) {
       CheckBallCollisions(); // todo: should not read geoms during process
@@ -1736,11 +2079,12 @@ void Match::Process() {
   } // end if !pause
 
   if (autoUpdateIngameCamera) UpdateIngameCamera();
+  ApplyDebugSaveCornerCamera();
 
   if (!pause) {
     unsigned int zoomTime = 2000;
     unsigned int startTime = 0;
-    if (actualTime_ms < zoomTime + startTime) { // nice effect at the start
+    if (!debugSaveCornerSequenceEnabled && actualTime_ms < zoomTime + startTime) { // nice effect at the start
 
       Quaternion initialOrientation = QUATERNION_IDENTITY;
       initialOrientation.SetAngleAxis(0.0f * pi, Vector3(1, 0, 0));
@@ -1842,6 +2186,15 @@ void Match::PreparePutBuffers() {
     officials->PreparePutBuffers(snapshotTime_ms);
   }
 
+  // Camera changes are editorial cuts. Do not interpolate a physical camera
+  // path through stadium geometry between the two independent views.
+  if (cameraCutPending) {
+    buf_cameraOrientation.Clear();
+    buf_cameraNodeOrientation.Clear();
+    buf_cameraNodePosition.Clear();
+    buf_cameraFOV.Clear();
+    cameraCutPending = false;
+  }
   buf_cameraOrientation.SetValue(cameraOrientation, snapshotTime_ms);
   buf_cameraNodeOrientation.SetValue(cameraNodeOrientation, snapshotTime_ms);
 

@@ -35,6 +35,10 @@ Team::Team(int id, Match *match, TeamData *teamData) : id(id), match(match), tea
   }
   lastTouchPlayer = 0;
   lastTouchType = e_TouchType_None;
+  lastPasser = 0;
+  lastPassReceiver = 0;
+  lastPassTime_ms = 0;
+  nextSubstituteIndex = playerNum;
 }
 
 Team::~Team() {
@@ -247,6 +251,12 @@ void Team::SetLastTouchPlayer(Player *player, e_TouchType touchType) {
   match->SetLastTouchTeamID(GetID(), touchType);
 }
 
+void Team::RegisterPass(Player *passer, Player *receiver) {
+  lastPasser = passer;
+  lastPassReceiver = receiver;
+  lastPassTime_ms = match->GetActualTime_ms();
+}
+
 void Team::ResetSituation(const Vector3 &focusPos) {
   timeNeededToGetToBall_ms = 100;
   hasPossession = false;
@@ -259,6 +269,9 @@ void Team::ResetSituation(const Vector3 &focusPos) {
   }
   lastTouchPlayer = 0;
   lastTouchType = e_TouchType_None;
+  lastPasser = 0;
+  lastPassReceiver = 0;
+  lastPassTime_ms = 0;
 
   designatedTeamPossessionPlayer = players.at(0);
 
@@ -315,6 +328,27 @@ void Team::RelaxFatigue(float howMuch) {
       players.at(i)->RelaxFatigue(howMuch);
     }
   }
+}
+
+bool Team::ApplyAutomaticSubstitution(std::string &outgoingName, std::string &incomingName) {
+  if (nextSubstituteIndex >= teamData->GetPlayerNum()) return false;
+
+  Player *outgoing = 0;
+  for (unsigned int i = 0; i < players.size(); ++i) {
+    Player *candidate = players.at(i);
+    if (!candidate->IsActive() || candidate->GetDynamicFormationEntry().role == e_PlayerRole_GK) continue;
+    if (!outgoing || candidate->GetFatigueFactorInv() < outgoing->GetFatigueFactorInv()) {
+      outgoing = candidate;
+    }
+  }
+  if (!outgoing) return false;
+
+  PlayerData *incomingData = teamData->GetPlayerData(nextSubstituteIndex++);
+  PlayerData *outgoingData = outgoing->GetPlayerData();
+  outgoingName = outgoingData->GetFirstName() + " " + outgoingData->GetLastName();
+  incomingName = incomingData->GetFirstName() + " " + incomingData->GetLastName();
+  outgoing->ApplySubstitution(incomingData);
+  return true;
 }
 
 void Team::Process() {

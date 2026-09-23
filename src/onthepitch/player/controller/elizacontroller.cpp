@@ -159,6 +159,7 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
       Vector3 desiredTargetPosition;
       bool doCommand = true;
+      bool directFreeKickShot = false;
 
       if (team->GetController()->GetSetPieceType() == e_SetPiece_GoalKick) {
         if (random(0.0f, 1.0f) > 0.4f && team->GetHumanGamerCount() == 0) {
@@ -174,9 +175,27 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
         desiredTargetPosition = player->GetPosition() + player->GetDirectionVec() * 1.0f;
 
       } else if (team->GetController()->GetSetPieceType() == e_SetPiece_FreeKick) {
-        if (random(0.0f, 1.0f) > 0.5f) {
+        const Vector3 ballPos = match->GetBall()->Predict(0).Get2D();
+        const Vector3 goalPos(-team->GetSide() * pitchHalfW, 0, 0);
+        const float goalDistance = (goalPos - ballPos).GetLength();
+        const float lateralOffset = fabs(ballPos.coords[1]);
+        if (team->GetHumanGamerCount() == 0 && goalDistance >= 17.0f &&
+            goalDistance <= 29.0f && lateralOffset < 12.0f) {
+          // Central free kicks in shooting range deserve a direct attempt.
+          directFreeKickShot = true;
+          actionCommand.desiredFunctionType = e_FunctionType_Shot;
+          const float targetY = (ballPos.coords[1] >= 0 ? -1.8f : 1.8f);
+          actionCommand.touchInfo.desiredDirection =
+              (Vector3(goalPos.coords[0], targetY, 0) - player->GetPosition()).GetNormalized(
+                  Vector3(-team->GetSide(), 0, 0));
+          actionCommand.touchInfo.desiredPower = 0.70f +
+              NormalizedClamp(goalDistance, 17.0f, 29.0f) * 0.12f;
+          actionCommand.touchInfo.autoDirectionBias = 1.0f;
+        } else if (goalDistance < 40.0f && lateralOffset >= 12.0f) {
+          // Wide free kicks are deliveries into the box, not sideways taps.
           actionCommand.desiredFunctionType = e_FunctionType_HighPass;
-          desiredTargetPosition = Vector3(pitchHalfW * -team->GetSide(), random(-10.0f, 10.0f), 0.0f);
+          desiredTargetPosition = Vector3((pitchHalfW - 9.0f) * -team->GetSide(),
+                                          random(-6.0f, 6.0f), 0.0f);
         } else {
           actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
           desiredTargetPosition = player->GetPosition() + Vector3(-team->GetSide() * 10.0f, random(-10.0f, 10.0f), 0.0f);
@@ -214,8 +233,46 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
       }
 
       if (doCommand) {
-        if (actionCommand.touchInfo.forcedTargetPlayer == 0) actionCommand.touchInfo.forcedTargetPlayer = AI_GetClosestPlayer(team, desiredTargetPosition, false, CastPlayer());
-        AI_GetPass(CastPlayer(), actionCommand.desiredFunctionType, actionCommand.touchInfo.inputDirection, actionCommand.touchInfo.inputPower, actionCommand.touchInfo.autoDirectionBias, actionCommand.touchInfo.autoPowerBias, actionCommand.touchInfo.desiredDirection, actionCommand.touchInfo.desiredPower, actionCommand.touchInfo.targetPlayer, actionCommand.touchInfo.forcedTargetPlayer);
+        if (!directFreeKickShot) {
+          const bool aerialDelivery = actionCommand.desiredFunctionType == e_FunctionType_HighPass &&
+              (team->GetController()->GetSetPieceType() == e_SetPiece_Corner ||
+               team->GetController()->GetSetPieceType() == e_SetPiece_FreeKick);
+          if (aerialDelivery) {
+            std::vector<Player*> candidates;
+            team->GetActivePlayers(candidates);
+            float bestTargetRating = -1.0f;
+            const Vector3 goal(-team->GetSide() * pitchHalfW, 0, 0);
+            const bool freeKickDelivery =
+                team->GetController()->GetSetPieceType() == e_SetPiece_FreeKick;
+            const float offsideLine = freeKickDelivery
+                ? AI_GetOffsideLine(match, _mentalImage, abs(team->GetID() - 1)) * -team->GetSide()
+                : pitchHalfW;
+            for (unsigned int i = 0; i < candidates.size(); ++i) {
+              Player *candidate = candidates.at(i);
+              if (candidate == CastPlayer() || candidate->GetFormationEntry().role == e_PlayerRole_GK) continue;
+              if (freeKickDelivery && candidate->GetPosition().coords[0] * -team->GetSide() >
+                                          offsideLine + 0.2f) continue;
+              const float goalDistance = (candidate->GetPosition() - goal).GetLength();
+              if (goalDistance > 23.0f || fabs(candidate->GetPosition().coords[1]) > 15.0f) continue;
+              const float rating = candidate->GetStat("technical_header") * 0.45f +
+                  (1.0f - NormalizedClamp(goalDistance, 6.0f, 23.0f)) * 0.35f +
+                  (1.0f - NormalizedClamp(fabs(candidate->GetPosition().coords[1]), 0.0f, 15.0f)) * 0.20f;
+              if (rating > bestTargetRating) {
+                bestTargetRating = rating;
+                actionCommand.touchInfo.forcedTargetPlayer = candidate;
+              }
+            }
+          }
+          if (actionCommand.touchInfo.forcedTargetPlayer == 0) {
+            actionCommand.touchInfo.forcedTargetPlayer =
+                AI_GetClosestPlayer(team, desiredTargetPosition, false, CastPlayer());
+          }
+          AI_GetPass(CastPlayer(), actionCommand.desiredFunctionType,
+                     actionCommand.touchInfo.inputDirection, actionCommand.touchInfo.inputPower,
+                     actionCommand.touchInfo.autoDirectionBias, actionCommand.touchInfo.autoPowerBias,
+                     actionCommand.touchInfo.desiredDirection, actionCommand.touchInfo.desiredPower,
+                     actionCommand.touchInfo.targetPlayer, actionCommand.touchInfo.forcedTargetPlayer);
+        }
         commandQueue.push_back(actionCommand);
       }
     }
@@ -792,7 +849,9 @@ Vector3 ElizaController::GetSupportPosition_ForceField(const MentalImage *mental
 
   Vector3 forceFieldPosition = currentPos + AI_GetForceFieldMovement(forceField, currentPos, 7);//8);
 
-  float margin = 0.08f;
+  // Leave room to accelerate onto a through ball without already standing
+  // beyond the defender when the teammate actually strikes it.
+  float margin = 0.3f;
   if (forceNoOffside) if (forceFieldPosition.coords[0] * -team->GetSide() > (offsideX * -team->GetSide()) - margin) forceFieldPosition.coords[0] = offsideX - (margin * -team->GetSide());
 
   forceFieldPosition.coords[0] = clamp(forceFieldPosition.coords[0], -pitchHalfW, pitchHalfW);
@@ -808,9 +867,11 @@ void ElizaController::Reset() {
 
 void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQueue, Vector3 &rawInputDirection, float &rawInputVelocityFloat) {
 
+  const float offensiveAggression = clamp(GetConfiguration()->GetReal("ai_offensive_aggression", 1.0f), 0.5f, 2.0f);
   float oneTouchIsHard = 0.0f;
   float movementDiff = NormalizedClamp((match->GetBall()->GetMovement() - CastPlayer()->GetMovement()).GetLength(), 0.0f, 10.0f);
   oneTouchIsHard = movementDiff - CastPlayer()->GetStat("technical_shortpass") * movementDiff * 0.8f;
+  oneTouchIsHard *= clamp(0.55f / offensiveAggression, 0.25f, 1.0f);
 
   std::vector<PlayerImage> opponentPlayerImages;
   _mentalImage->GetTeamPlayerImages(abs(team->GetID() - 1), -1, opponentPlayerImages);
@@ -819,6 +880,19 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
   // DECIDE WHAT TO DO
 
   float longPossessionFactor = std::pow(NormalizedClamp(CastPlayer()->GetPossessionDuration_ms(), 0, 5000), 2.0f);
+  const Vector3 opponentGoal(pitchHalfW * -team->GetSide(), 0, 0);
+  const float distanceToGoal = (opponentGoal - player->GetPosition()).GetLength();
+  const float attackingZoneFactor = 1.0f - NormalizedClamp(distanceToGoal, 18.0f, 52.0f);
+  const float finalThirdDecision_ms = clamp(
+      GetConfiguration()->GetReal("ai_final_third_decision_ms", 800.0f), 500.0f, 4000.0f);
+  const float decisionUrgency = NormalizedClamp(
+      static_cast<float>(CastPlayer()->GetPossessionDuration_ms()),
+      finalThirdDecision_ms * 0.45f, finalThirdDecision_ms);
+  const float attackingDecisionUrgency = decisionUrgency * attackingZoneFactor;
+  const bool crossingPosition = distanceToGoal < 40.0f &&
+      fabs(player->GetPosition().coords[1]) > 11.0f;
+  const float crossAggression = clamp(
+      GetConfiguration()->GetReal("ai_cross_aggression", 1.0f), 0.6f, 1.6f);
 
   // first selection
   float forwardSpaceWeight = 0.4f;
@@ -826,7 +900,9 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
   float forwardWeight = 2.0f + AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role) * 6.0f;
 
   float totalWeight1 = forwardSpaceWeight + spaceWeight + forwardWeight;
-  float tacticalImprovementThreshold = 0.06f * (1.0f - AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role)); // only go on with pass selection if recipient has this much tactical advantage over current player
+  float tacticalImprovementThreshold =
+      0.06f * (1.0f - AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role)) *
+      (1.0f - attackingZoneFactor * 0.65f) / offensiveAggression;
 
   // second selection
   float tacticalDiffWeight =
@@ -835,12 +911,13 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
                2.0f) *
           10.0f;
   float passWeight = 1.0f;
-  float passMinimum = 0.2f * (1.0f - AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role)) - longPossessionFactor * 0.1f;
+  float passMinimum = 0.2f * (1.0f - AI_GetMindSet(CastPlayer()->GetDynamicFormationEntry().role)) / offensiveAggression -
+                      longPossessionFactor * 0.12f - attackingZoneFactor * 0.04f;
 
   float totalWeight2 = tacticalDiffWeight + passWeight;
 
   // name says it all
-  float passThreshold = 0.1f - longPossessionFactor * 0.05f;
+  float passThreshold = 0.1f / offensiveAggression - longPossessionFactor * 0.08f - attackingZoneFactor * 0.04f;
 
   // self rating
   const TacticalPlayerSituation &sit = CastPlayer()->GetTacticalSituation();
@@ -860,6 +937,9 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
     float tacticalDiffRating;
     float passRating;
     float proximityRating;
+    float goalThreat;
+    float chanceCreationRating;
+    bool isCross;
     e_FunctionType passType;
   };
 
@@ -868,12 +948,33 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
   TacticalPlayerSituation bestMateSit;
   bestMateRating.player = 0;
   bestMateRating.passRating = 0.0f;
+  bestMateRating.goalThreat = 0.0f;
+  bestMateRating.chanceCreationRating = 0.0f;
+  bestMateRating.isCross = false;
   bestMateRating.passType = e_FunctionType_ShortPass;
+  const float currentGoalThreat =
+      (1.0f - NormalizedClamp(distanceToGoal, 10.0f, 38.0f)) *
+      (1.0f - NormalizedClamp(fabs(player->GetPosition().coords[1]), 6.0f, 28.0f));
+  const int defendingTeamID = abs(team->GetID() - 1);
+  const float offsideLineNow = AI_GetOffsideLine(match, _mentalImage, defendingTeamID) * -team->GetSide();
+  const float offsideLineAtTouch = AI_GetOffsideLine(match, _mentalImage, defendingTeamID, 180) * -team->GetSide();
+  const float safeOffsideLine = std::min(offsideLineNow, offsideLineAtTouch);
   for (unsigned int i = 0; i < mates.size(); i++) {
 
     if (mates.at(i) != CastPlayer()) {
 
       const TacticalPlayerSituation &mateSit = mates.at(i)->GetTacticalSituation();
+
+      // Outfield players never use the goalkeeper as a generic recycling
+      // option. This also prevents accidental shots created by a risky
+      // backpass across the face of the own goal.
+      if (mates.at(i)->GetFormationEntry().role == e_PlayerRole_GK &&
+          CastPlayer()->GetFormationEntry().role != e_PlayerRole_GK) continue;
+      const float targetAtTouch = (mates.at(i)->GetPosition().coords[0] +
+          mates.at(i)->GetMovement().coords[0] * 0.18f) * -team->GetSide();
+      // A player clearly beyond the ball and second-last defender cannot be
+      // the intended receiver. Keep only a narrow margin for plausible close calls.
+      if (targetAtTouch > safeOffsideLine + 1.2f) continue;
 
       float mateTacticalRating = mateSit.forwardSpaceRating * forwardSpaceWeight +
                                  mateSit.spaceRating * spaceWeight +
@@ -885,31 +986,83 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
       MateRating mateRating;
       mateRating.player = mates.at(i);
       mateRating.tacticalRating = mateTacticalRating;
+      const float mateGoalDistance = (opponentGoal - mates.at(i)->GetPosition()).GetLength();
+      mateRating.goalThreat =
+          (1.0f - NormalizedClamp(mateGoalDistance, 10.0f, 38.0f)) *
+          (1.0f - NormalizedClamp(fabs(mates.at(i)->GetPosition().coords[1]), 6.0f, 28.0f));
 
-      if (mateTacticalRating > tacticalRating + tacticalImprovementThreshold) {
+      const float forwardGain = NormalizedClamp(distanceToGoal - mateGoalDistance, 0.0f, 18.0f);
+      const float signedForwardProgress =
+          (mates.at(i)->GetPosition().coords[0] - player->GetPosition().coords[0]) * -team->GetSide();
+      const float backwardDistance = std::max(0.0f, -signedForwardProgress);
+      const bool targetInScoringArea = mateGoalDistance < 24.0f &&
+          fabs(mates.at(i)->GetPosition().coords[1]) < 14.5f;
+      mateRating.isCross = crossingPosition && targetInScoringArea &&
+          signedForwardProgress > -3.0f;
+      mateRating.chanceCreationRating =
+          mateRating.goalThreat * 0.60f + mateSit.spaceRating * 0.20f + forwardGain * 0.20f;
+
+      float passingOddsShort = _GetPassingOdds(mates.at(i), e_FunctionType_ShortPass, opponentPlayerImages);
+      float passingOddsLong  = _GetPassingOdds(mates.at(i), e_FunctionType_LongPass,  opponentPlayerImages);
+      float passingOddsHigh  = _GetPassingOdds(mates.at(i), e_FunctionType_HighPass,  opponentPlayerImages);
+      if (passingOddsShort >= passingOddsLong && passingOddsShort >= passingOddsHigh) {
+        mateRating.passRating = passingOddsShort;
+        mateRating.passType = e_FunctionType_ShortPass;
+      } else if (passingOddsLong >= passingOddsHigh) {
+        mateRating.passRating = passingOddsLong;
+        mateRating.passType = e_FunctionType_LongPass;
+      } else {
+        mateRating.passRating = passingOddsHigh;
+        mateRating.passType = e_FunctionType_HighPass;
+      }
+      if (mateRating.isCross && passingOddsHigh > 0.15f / crossAggression) {
+        mateRating.passRating = passingOddsHigh;
+        mateRating.passType = e_FunctionType_HighPass;
+        mateRating.chanceCreationRating += 0.38f * crossAggression;
+      } else {
+        mateRating.isCross = false;
+      }
+
+      const bool createsGoalChance = mateRating.chanceCreationRating > currentGoalThreat + 0.06f / offensiveAggression;
+      const bool urgentProgressiveRelease = attackingDecisionUrgency > 0.35f &&
+          forwardGain > 0.10f && mateRating.passRating > 0.42f;
+      const bool clearProgressivePass = signedForwardProgress > 5.0f &&
+          mateRating.passRating > 0.40f;
+      const bool immediateReturnPass = team->GetLastPassReceiver() == CastPlayer() &&
+          team->GetLastPasser() == mates.at(i) &&
+          match->GetActualTime_ms() < team->GetLastPassTime_ms() + 2600;
+      const bool productiveOneTwo = targetInScoringArea && signedForwardProgress > 3.0f &&
+          createsGoalChance;
+      const bool wastefulBackPass = backwardDistance > 4.0f && attackingZoneFactor > 0.15f;
+      if (mateTacticalRating > tacticalRating + tacticalImprovementThreshold ||
+          createsGoalChance || urgentProgressiveRelease || clearProgressivePass) {
+
+        if ((immediateReturnPass && !productiveOneTwo) ||
+            (wastefulBackPass && !createsGoalChance)) continue;
 
         float tacticalDiffRating = mateRating.tacticalRating - tacticalRating;
 
         mateRating.tacticalDiffRating = tacticalDiffRating;
-        float passingOddsShort = _GetPassingOdds(mates.at(i), e_FunctionType_ShortPass, opponentPlayerImages);
-        float passingOddsLong  = _GetPassingOdds(mates.at(i), e_FunctionType_LongPass,  opponentPlayerImages);
-        float passingOddsHigh  = _GetPassingOdds(mates.at(i), e_FunctionType_HighPass,  opponentPlayerImages);
-        if (passingOddsShort >= passingOddsLong && passingOddsShort >= passingOddsHigh) {
-          mateRating.passRating = passingOddsShort;
-          mateRating.passType = e_FunctionType_ShortPass;
-        } else if (passingOddsLong >= passingOddsHigh) {
-          mateRating.passRating = passingOddsLong;
-          mateRating.passType = e_FunctionType_LongPass;
-        } else {
-          mateRating.passRating = passingOddsHigh;
-          mateRating.passType = e_FunctionType_HighPass;
-        }
 
         float totalRating = mateRating.tacticalDiffRating * tacticalDiffWeight +
-                            mateRating.passRating * passWeight -
+                            mateRating.passRating * passWeight +
+                            std::max(0.0f, mateRating.chanceCreationRating - currentGoalThreat) *
+                                offensiveAggression * (1.6f + attackingDecisionUrgency) -
                             oneTouchIsHard;
 
+        // Once an attack reaches the final third, a clear progressive pass
+        // must beat holding the ball until the defence recovers.
+        if (urgentProgressiveRelease) totalRating += attackingDecisionUrgency * 0.22f;
+        if (mateRating.isCross) totalRating += 0.32f;
+        totalRating -= NormalizedClamp(backwardDistance, 0.0f, 15.0f) *
+                       (0.20f + attackingZoneFactor * 0.35f);
+
         totalRating /= totalWeight2;
+        totalRating += NormalizedClamp(signedForwardProgress, 2.0f, 18.0f) *
+                       0.30f * offensiveAggression;
+        if (fabs(signedForwardProgress) < 2.0f && !mateRating.isCross) {
+          totalRating -= 0.14f;
+        }
 
         if (totalRating > bestTotalRating && totalRating > passThreshold && mateRating.passRating > passMinimum) {
           bestTotalRating = totalRating;
@@ -938,42 +1091,114 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
     }
   }
 
-  if (bestMateRating.player != 0) {
-    _AddPass(commandQueue, bestMateRating.player, bestMateRating.passType);
-  }
-
   // shoot?
-  float goalDist = NormalizedClamp((Vector3(pitchHalfW * -team->GetSide(), 0, 0) - player->GetPosition()).GetLength(), 0.0f, 32.0f);
-  float idealShotPosFactor = 1.0f - NormalizedClamp((Vector3((pitchHalfW - 7.0f) * -team->GetSide(), 0, 0) - player->GetPosition()).GetLength(), 0.0f, 16.0f);
-  idealShotPosFactor = curve(idealShotPosFactor, 1.0f);
-  if (idealShotPosFactor > 0.1f) {
-    float odds1 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(), -3.6f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
+  const float maxShotDistance = clamp(GetConfiguration()->GetReal("ai_shot_max_distance", 30.0f), 18.0f, 35.0f);
+  const float minShotQuality = clamp(GetConfiguration()->GetReal("ai_shot_min_quality", 0.48f), 0.4f, 0.9f);
+  const float shotRangeRating = 1.0f - NormalizedClamp(distanceToGoal, 10.0f, maxShotDistance);
+  const float shotAngleRating = 1.0f - NormalizedClamp(fabs(player->GetPosition().coords[1]), 5.0f, 28.0f);
+  const Vector3 directionToGoal = (opponentGoal - player->GetPosition()).GetNormalized(Vector3(-team->GetSide(), 0, 0));
+  const float bodyAlignment = NormalizedClamp(CastPlayer()->GetBodyDirectionVec().GetDotProduct(directionToGoal), 0.05f, 0.9f);
+  const float playerSpeed = CastPlayer()->GetMovement().GetLength();
+  const float movementAlignment = playerSpeed < walkVelocity
+      ? 1.0f
+      : NormalizedClamp(CastPlayer()->GetMovement().GetNormalized(0).GetDotProduct(directionToGoal), -0.2f, 0.85f);
+  const float touchStability = 1.0f - NormalizedClamp(
+      (match->GetBall()->GetMovement() - CastPlayer()->GetMovement()).GetLength(), 4.0f, 14.0f);
+  const float balanceRating = bodyAlignment * 0.50f + movementAlignment * 0.25f + touchStability * 0.25f;
+
+  float closestOpponentDistance = 20.0f;
+  for (unsigned int i = 0; i < opponentPlayerImages.size(); ++i) {
+    const float opponentDistance = (opponentPlayerImages.at(i).position - CastPlayer()->GetPosition()).GetLength();
+    if (opponentDistance < closestOpponentDistance) closestOpponentDistance = opponentDistance;
+  }
+  const float pressureRating = NormalizedClamp(closestOpponentDistance, 1.2f, 6.0f);
+
+  const float requiredBalance = 0.48f - attackingDecisionUrgency * 0.10f -
+      ((distanceToGoal < 10.0f) ? 0.06f : 0.0f);
+  const bool preferredCrossAvailable = bestMateRating.player != 0 &&
+      bestMateRating.isCross && bestMateRating.passRating > 0.18f / crossAggression;
+  const bool clearAssistAvailable = preferredCrossAvailable ||
+      (bestMateRating.player != 0 &&
+       bestMateRating.goalThreat > currentGoalThreat + 0.10f &&
+       bestMateRating.passRating > 0.42f);
+  // Prefer one more combination outside the box only while there is still
+  // time to build and the pass is genuinely safer than the available shot.
+  // Once the final-third decision timer is running out, do not keep recycling
+  // possession and miss the shooting window.
+  const bool patientBuildUpAvailable = distanceToGoal > 22.0f &&
+      attackingDecisionUrgency < 0.62f && bestMateRating.player != 0 &&
+      bestMateRating.passRating > 0.48f &&
+      bestMateRating.goalThreat > currentGoalThreat + 0.06f;
+  if (distanceToGoal < maxShotDistance && shotAngleRating > 0.0f && balanceRating > requiredBalance) {
+    float odds1 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(), -2.4f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
     float odds2 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(),  0.0f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
-    float odds3 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(),  3.6f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
+    float odds3 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(),  2.4f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
     float odds = odds2; float y = 0.0f;
-    if (odds1 > odds) { odds = odds1; y = -3.5f; }
-    if (odds3 > odds) { odds = odds3; y =  3.5f; }
+    if (odds1 > odds) { odds = odds1; y = -2.4f; }
+    if (odds3 > odds) { odds = odds3; y =  2.4f; }
 
     odds = std::pow(odds, 0.5f);
     if (Verbose()) printf("ODDS: %f\n", odds);
 
-    if (odds + random(0.0f, 0.5f) > 0.5f) {
+    const float technicalQuality = 0.85f + CastPlayer()->GetStat("technical_shot") * 0.15f;
+    const float shotQuality = (odds * 0.30f + shotRangeRating * 0.25f + shotAngleRating * 0.15f +
+                               balanceRating * 0.20f + pressureRating * 0.10f) * technicalQuality;
+    const float bestPassChance = bestMateRating.player != 0
+        ? bestMateRating.chanceCreationRating * bestMateRating.passRating
+        : 0.0f;
+    const bool passCreatesBetterChance = preferredCrossAvailable || patientBuildUpAvailable ||
+        (clearAssistAvailable && bestPassChance > shotQuality + 0.02f &&
+         bestMateRating.passRating > 0.42f);
+    const float longRangePenalty = maxShotDistance > 21.0f
+        ? NormalizedClamp(distanceToGoal, 21.0f, maxShotDistance) * 0.14f
+        : 0.0f;
+    const bool specialistLongShot = distanceToGoal > 20.0f &&
+        CastPlayer()->GetStat("technical_shot") > 0.78f &&
+        balanceRating > 0.68f && odds > 0.62f && pressureRating > 0.55f;
+    const float effectiveMinShotQuality = minShotQuality + longRangePenalty -
+        attackingDecisionUrgency * 0.05f - ((distanceToGoal < 16.0f) ? 0.04f : 0.0f) -
+        (specialistLongShot ? 0.07f : 0.0f) -
+        ((distanceToGoal < 10.0f) ? 0.04f : 0.0f);
+
+    if (odds > 0.20f && shotQuality > effectiveMinShotQuality && !passCreatesBetterChance) {
       PlayerCommand command;
       command.desiredFunctionType = e_FunctionType_Shot;
       command.useDesiredMovement = false;
       command.useDesiredLookAt = false;
       command.desiredVelocityFloat = rawInputVelocityFloat; // this is so we can use sprint/dribble buttons as shot modifiers
-      command.touchInfo.desiredDirection = (Vector3((pitchHalfW + 1.0f) * -team->GetSide(), y + random(-1.0f + player->GetStat("technical_shot"), 1.0f - player->GetStat("technical_shot")), 0) - (CastPlayer()->GetPosition() + CastPlayer()->GetMovement() * 0.2f)).GetNormalized(Vector3(-team->GetSide(), 0, 0));
-      command.touchInfo.desiredDirection = (command.touchInfo.desiredDirection * 0.7f + -CastPlayer()->GetDirectionVec() * (CastPlayer()->GetFloatVelocity() / sprintVelocity) * 0.3f).GetNormalized();
+      const float aimError = (1.0f - player->GetStat("technical_shot")) * 0.35f;
+      command.touchInfo.desiredDirection = (Vector3((pitchHalfW + 1.0f) * -team->GetSide(),
+          y + random(-aimError, aimError), 0) -
+          (CastPlayer()->GetPosition() + CastPlayer()->GetMovement() * 0.2f)).GetNormalized(Vector3(-team->GetSide(), 0, 0));
+      command.touchInfo.desiredDirection = (command.touchInfo.desiredDirection * 0.88f +
+          -CastPlayer()->GetDirectionVec() * (CastPlayer()->GetFloatVelocity() / sprintVelocity) * 0.12f).GetNormalized();
       command.touchInfo.autoDirectionBias = 1.0f;
-      command.touchInfo.desiredPower = random(0.7f * (0.6f + goalDist * 0.4f), 1.0f * (0.6f + goalDist * 0.4f));
+      const float shotPower = 0.58f + NormalizedClamp(distanceToGoal, 8.0f, maxShotDistance) * 0.22f;
+      command.touchInfo.desiredPower = random(shotPower - 0.04f, shotPower + 0.04f);
       commandQueue.push_back(command);
     }
+  }
+
+  // Commands are tried in queue order. An attractive shot must therefore be
+  // queued before the pass fallback, otherwise a valid pass masks every shot.
+  const bool prepareFinish = distanceToGoal < maxShotDistance &&
+      shotAngleRating > 0.05f && balanceRating <= requiredBalance &&
+      !clearAssistAvailable;
+  if (bestMateRating.player != 0 && !prepareFinish) {
+    _AddPass(commandQueue, bestMateRating.player, bestMateRating.passType);
   }
 
 
   e_Velocity enumVelocity = e_Velocity_Idle;
   AI_GetBestDribbleMovement(match, player->GetID(), _mentalImage, rawInputDirection, rawInputVelocityFloat, team->GetTeamData()->GetTactics());
+
+  // If no immediate action animation is available, prepare the next touch by
+  // facing goal and slowing down instead of continuing a sterile dribble.
+  if (distanceToGoal < maxShotDistance &&
+      (attackingDecisionUrgency > 0.25f || prepareFinish)) {
+    rawInputDirection = directionToGoal;
+    rawInputVelocityFloat = std::min(rawInputVelocityFloat, dribbleVelocity);
+  }
 }
 
 void ElizaController::_AddPass(std::vector<PlayerCommand> &commandQueue, Player *target, e_FunctionType passType) {
@@ -997,6 +1222,22 @@ void ElizaController::_AddPanicPass(std::vector<PlayerCommand> &commandQueue) {
   Vector3 sensibleAwayDir = ((player->GetDirectionVec() * Vector3(0.8f, 1.0f, 0.0f)).GetNormalized() + Vector3(-team->GetSide() * 0.7f, yside * 0.5f, 0)).GetNormalized(0) + Vector3(0, 0, 0.3f);
   sensibleAwayDir.Normalize(player->GetDirectionVec());
 
+  // With no safe outlet while trapped near the byline, a defender may choose
+  // the safe side of their own goal and concede a corner. The ball still has
+  // to leave the field after the actual touch for the referee to award it.
+  const Vector3 ownGoal(team->GetSide() * pitchHalfW, 0, 0);
+  const Vector3 playerPos = CastPlayer()->GetPosition();
+  if (CastPlayer()->GetFormationEntry().role != e_PlayerRole_GK &&
+      (playerPos - ownGoal).GetLength() < 15.0f &&
+      fabs(playerPos.coords[1]) > 6.0f && random(0.0f, 1.0f) < 0.25f) {
+    const float clearanceY = playerPos.coords[1] > 0.0f
+        ? playerPos.coords[1] + 9.0f : playerPos.coords[1] - 9.0f;
+    sensibleAwayDir = (Vector3(team->GetSide() * (pitchHalfW + 4.0f),
+                               clearanceY, 0) - playerPos).GetNormalized(0) +
+                       Vector3(0, 0, 0.18f);
+    sensibleAwayDir.Normalize(player->GetDirectionVec());
+  }
+
   PlayerCommand command;
   command.useDesiredMovement = false;
   command.useDesiredLookAt = false;
@@ -1009,11 +1250,6 @@ void ElizaController::_AddPanicPass(std::vector<PlayerCommand> &commandQueue) {
   command.desiredFunctionType = e_FunctionType_HighPass;
   command.touchInfo.inputPower = 0.7f;
   command.touchInfo.desiredPower = 0.7f;
-  commandQueue.push_back(command);
-
-  command.desiredFunctionType = e_FunctionType_Shot;
-  command.touchInfo.inputPower = 0.6f;
-  command.touchInfo.desiredPower = 0.6f;
   commandQueue.push_back(command);
 
   command.desiredFunctionType = e_FunctionType_LongPass;

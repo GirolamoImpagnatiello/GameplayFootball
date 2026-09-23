@@ -179,6 +179,16 @@ class Match {
 
     void GameOver();
 
+    // Dataset event lifecycle: a shot remains pending until it results in a
+    // goal, a goalkeeper intervention, or a restart decision.
+    void NotifyShot(Player *shooter);
+    void NotifyGoalkeeperSave(Player *keeper);
+    void NotifyRestart(e_SetPiece setPiece, int restartingTeamID);
+    void NotifySetPieceTaken(e_SetPiece setPiece, int takingTeamID);
+    void NotifyFoul(Player *offender, Player *victim, int foulType);
+    void NotifyOffside(Player *player);
+    void NotifyClearance(Player *player, const Vector3 &ballMovement);
+
     void GetCameraParams(float &zoom, float &height, float &fov, float &angleFactor);
     void SetCameraParams(float zoom, float height, float fov, float angleFactor);
 
@@ -250,6 +260,10 @@ class Match {
     void RecordSoccerReplayPhaseEnd(e_MatchPhase phase);
     void RecordSoccerReplayGoal(bool ownGoal);
     void RecordSoccerReplayPossession();
+    void RecordSoccerReplayEvent(const std::string &label,
+                                 const std::string &text,
+                                 const std::string &anonymizedText);
+    bool HasRecentPendingShot() const;
     void ScheduleSoccerReplayFrameDump();
     void InitializeBlenderTrackingExporter();
     void ScheduleBlenderTrackingFrameDump();
@@ -288,9 +302,22 @@ class Match {
     float cameraUserZoom;
     float cameraUserHeight;
     float cameraUserFOV;
-    float cameraUserAngleFactor;
-    bool cameraCornerCloseupEnabled;
-    int cameraCornerCloseupDuration_ms;
+      float cameraUserAngleFactor;
+      bool cameraCornerCloseupEnabled;
+      int cameraCornerCloseupDuration_ms;
+      std::string cameraCornerView;
+      bool cameraCornerViewActive;
+      bool cameraCutPending;
+      bool debugSaveCornerSequenceEnabled;
+      bool debugSaveCornerSequenceStarted;
+      bool debugSaveCornerDeflected;
+      bool debugSaveCornerForced;
+      unsigned long debugSaveCornerSequenceStart_ms;
+      int debugSaveCornerCameraShot;
+      int debugSaveCornerDefendingTeamID;
+
+    void ProcessDebugSaveCornerSequence();
+    void ApplyDebugSaveCornerCamera();
 
     boost::shared_ptr<AnimCollection> anims;
 
@@ -345,6 +372,13 @@ class Match {
     unsigned long datasetLastPossessionEventTime_ms;
     int datasetLastFrameHalf;
     int datasetLastFrameSecond;
+    int datasetPendingShotTeamID;
+    Player *datasetPendingShotPlayer;
+    unsigned long datasetPendingShotTime_ms;
+    unsigned long datasetPendingShotMatchTime_ms;
+    int datasetPendingShotHalf;
+    std::string datasetPendingShotTimeStamp;
+    bool datasetPendingShotSaved;
     bool datasetGameOverRecorded;
     int blenderTrackingLastFrameBucket;
     bool cosmosCaptureEnabled;

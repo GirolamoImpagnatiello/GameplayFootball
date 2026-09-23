@@ -533,6 +533,10 @@ void Humanoid::Process() {
 
         match->GetBall()->Touch(touchVec);
         match->GetBall()->TriggerBallTouchSound(std::pow(NormalizedClamp(touchVec.GetLength(), 4.0f, 40.0f), 0.7f));
+        if (currentAnim->functionType == e_FunctionType_LongPass ||
+            currentAnim->functionType == e_FunctionType_HighPass) {
+          match->NotifyClearance(CastPlayer(), touchVec);
+        }
 
         float forwardness = 3.5f;
         if (currentAnim->functionType == e_FunctionType_HighPass) forwardness = -1.3f;
@@ -541,6 +545,7 @@ void Humanoid::Process() {
         match->GetBall()->SetRotation(xRot, yRot, zcurve, 0.9f * (1.0f - bumpyRideBias));
 
         team->SetLastTouchPlayer(CastPlayer(), GetTouchTypeForBodyPart(currentAnim->anim->GetVariable("touch_bodypart")));
+        if (targetPlayer) team->RegisterPass(CastPlayer(), targetPlayer);
         CastPlayer()->UpdatePossessionStats(false);
         if (targetPlayer) targetPlayer->UpdatePossessionStats(false);
       }
@@ -579,6 +584,7 @@ void Humanoid::Process() {
 
         team->SetLastTouchPlayer(CastPlayer(), GetTouchTypeForBodyPart(currentAnim->anim->GetVariable("touch_bodypart")));
         match->GetMatchData()->AddShot(team->GetID());
+        match->NotifyShot(CastPlayer());
       }
 
       else if (currentAnim->functionType == e_FunctionType_Interfere) {
@@ -620,6 +626,22 @@ void Humanoid::Process() {
           Vector3 touchVec = (-currentBallMovement * 0.1f + playerMovement * 2.0f + Vector3(-team->GetSide(), 0, 0) * 4.0f + Vector3(0, random(-1, 1), 0)).GetNormalized(0) * (currentBallMovement.GetLength() * 0.3f + playerMovement.GetLength() * 2.5f);
           touchVec.coords[2] += 1.2f;
 
+          // A keeper facing a difficult shot near the goal can tip it wide
+          // of the post. Only a ball that actually crosses the byline is a
+          // corner; the normal out-of-play logic remains responsible for it.
+          const Vector3 ballPos = match->GetBall()->Predict(0).Get2D();
+          const Vector3 ownGoal(team->GetSide() * pitchHalfW, 0, 0);
+          if (CastPlayer()->GetFormationEntry().role == e_PlayerRole_GK &&
+              (ballPos - ownGoal).GetLength() < 16.0f &&
+              currentBallMovement.GetLength() > 9.0f &&
+              random(0.0f, 1.0f) < 0.32f) {
+            const float targetY = ballPos.coords[1] >= 0.0f ? 12.0f : -12.0f;
+            const Vector3 wideTarget(team->GetSide() * (pitchHalfW + 3.0f), targetY, 0);
+            touchVec = (wideTarget - ballPos).GetNormalized(0) *
+                std::max(8.0f, currentBallMovement.GetLength() * 0.45f);
+            touchVec.coords[2] = 1.2f;
+          }
+
           touchVec = touchVec * (1.0f - bumpyRideBias) + currentBallVec * bumpyRideBias;
           if (Verbose() && bumpyRideBias > 0.01f) printf("bumpyridebias (deflect): %f\n", bumpyRideBias);
 
@@ -627,6 +649,9 @@ void Humanoid::Process() {
           match->GetBall()->SetRotation(0, 0, 0, 0.2f * (1.0f - bumpyRideBias));
         }
         team->SetLastTouchPlayer(CastPlayer(), e_TouchType_Accidental);
+        if (CastPlayer()->GetFormationEntry().role == e_PlayerRole_GK) {
+          match->NotifyGoalkeeperSave(CastPlayer());
+        }
       }
 
       else if (currentAnim->functionType == e_FunctionType_Sliding) {

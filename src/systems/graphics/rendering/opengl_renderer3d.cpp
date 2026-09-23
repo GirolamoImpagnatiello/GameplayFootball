@@ -68,6 +68,11 @@ struct PixelWriteJob {
   int height;
   int stride;
   bool depth;
+  bool metricDepth;
+  float cameraNear;
+  float cameraFar;
+  float outputNear;
+  float outputFar;
 };
 
 std::deque<PixelWriteJob> asyncPixelWriteJobs;
@@ -93,7 +98,23 @@ void ProcessPixelWriteJob(const PixelWriteJob &job) {
       const int sourceY = job.height - y - 1;
       for (int x = 0; x < job.width; ++x) {
         const float d = std::max(0.0f, std::min(depthPixels[sourceY * job.width + x], 1.0f));
-        const unsigned char value = static_cast<unsigned char>((1.0f - d) * 255.0f);
+        float normalized = 1.0f - d;
+        if (job.metricDepth) {
+          // OpenGL stores non-linear camera-space Z. Reconstruct metric Z with
+          // the projection parameters used for this frame, then apply one
+          // fixed dataset-wide mapping. Clear/background depth remains black.
+          if (d >= 1.0f - 1e-7f) {
+            normalized = 0.0f;
+          } else {
+            const float denominator = job.cameraFar - d * (job.cameraFar - job.cameraNear);
+            const float z = (job.cameraNear * job.cameraFar) / std::max(denominator, 1e-6f);
+            normalized = (job.outputFar - z) / (job.outputFar - job.outputNear);
+            normalized = std::max(0.0f, std::min(normalized, 1.0f));
+          }
+        }
+        const unsigned char value = job.metricDepth
+          ? static_cast<unsigned char>(std::round(normalized * 255.0f))
+          : static_cast<unsigned char>(normalized * 255.0f);
         dst[x * 4 + 0] = value;
         dst[x * 4 + 1] = value;
         dst[x * 4 + 2] = value;
@@ -248,6 +269,11 @@ struct AsyncPixelRead {
   GLenum format;
   GLenum type;
   bool depth;
+  bool metricDepth;
+  float cameraNear;
+  float cameraFar;
+  float outputNear;
+  float outputFar;
   unsigned int readyFrame;
 };
 
@@ -283,6 +309,11 @@ bool DispatchAsyncPixelRead(const AsyncPixelRead &read) {
   job.height = read.height;
   job.stride = read.stride;
   job.depth = read.depth;
+  job.metricDepth = read.metricDepth;
+  job.cameraNear = read.cameraNear;
+  job.cameraFar = read.cameraFar;
+  job.outputNear = read.outputNear;
+  job.outputFar = read.outputFar;
   EnqueuePixelWriteJob(job);
   return true;
 }
@@ -310,7 +341,9 @@ void ServiceAsyncPixelReads(bool force, int maxDispatches = 0) {
   }
 }
 
-bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, int height, GLenum format, GLenum type, bool depth) {
+bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, int height, GLenum format, GLenum type, bool depth,
+                         bool metricDepth = false, float cameraNear = 0.0f, float cameraFar = 1.0f,
+                         float outputNear = 0.0f, float outputFar = 1.0f) {
   if (filenames.empty()) return false;
   if (width <= 0 || height <= 0) return false;
 
@@ -327,6 +360,11 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
   read.format = format;
   read.type = type;
   read.depth = depth;
+  read.metricDepth = metricDepth;
+  read.cameraNear = cameraNear;
+  read.cameraFar = cameraFar;
+  read.outputNear = outputNear;
+  read.outputFar = outputFar;
   read.readyFrame = asyncPixelReadFrame + asyncPixelReadLatencyFrames;
 
   mapping.glGenBuffers(1, &read.pbo);
@@ -2140,18 +2178,22 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
     return QueueAsyncPixelRead(filenames, context_width, context_height, GL_RGBA, GL_UNSIGNED_BYTE, false);
   }
 
-  bool OpenGLRenderer3D::SaveDepthBuffer(const std::string &filename, int width, int height) {
+  bool OpenGLRenderer3D::SaveDepthBuffer(const std::string &filename, int width, int height, float cameraNear, float cameraFar) {
     std::vector<std::string> filenames;
     filenames.push_back(filename);
-    return SaveDepthBuffer(filenames, width, height);
+    return SaveDepthBuffer(filenames, width, height, cameraNear, cameraFar);
   }
 
-  bool OpenGLRenderer3D::SaveDepthBuffer(const std::vector<std::string> &filenames, int width, int height) {
+  bool OpenGLRenderer3D::SaveDepthBuffer(const std::vector<std::string> &filenames, int width, int height, float cameraNear, float cameraFar) {
     if (!contextIsActive) return false;
     if (width <= 0 || height <= 0) return false;
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    return QueueAsyncPixelRead(filenames, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, true);
+    const bool metricDepth = GetConfiguration()->Get("cosmos_depth_mapping", "linear_metric") == "linear_metric";
+    const float outputNear = std::max(0.001f, GetConfiguration()->GetReal("cosmos_depth_near_m", 1.0f));
+    const float outputFar = std::max(outputNear + 0.001f, GetConfiguration()->GetReal("cosmos_depth_far_m", 220.0f));
+    return QueueAsyncPixelRead(filenames, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, true,
+                               metricDepth, cameraNear, cameraFar, outputNear, outputFar);
   }
 
   bool OpenGLRenderer3D::SaveColorBuffer(const std::string &filename, e_TargetAttachment attachment, int width, int height) {

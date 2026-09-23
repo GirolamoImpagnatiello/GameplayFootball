@@ -47,6 +47,30 @@ void DefaultMidfieldStrategy::RequestInput(const MentalImage *mentalImage, Vecto
     team->GetController()->ApplyOffsideTrap(desiredPosition);
   }
 
+  const e_PlayerRole role = CastPlayer()->GetDynamicFormationEntry().role;
+  if (role == e_PlayerRole_LM || role == e_PlayerRole_RM || role == e_PlayerRole_AM) {
+    const float offensiveAggression = clamp(
+        GetConfiguration()->GetReal("ai_offensive_aggression", 1.0f), 0.5f, 2.0f);
+    const float possessionRunBias = NormalizedClamp(
+        controller->GetFadingTeamPossessionAmount(), 0.65f, 1.35f);
+    const float ballProgress = NormalizedClamp(
+        match->GetBall()->Predict(0).coords[0] * -team->GetSide(), 0.0f, 38.0f);
+    const float supportRunBias = clamp(
+        possessionRunBias * ballProgress * (0.30f + offensiveAggression * 0.12f),
+        0.0f, 0.58f);
+    if (supportRunBias > 0.0f) {
+      const float ballY = match->GetBall()->Predict(0).coords[1];
+      const bool wideFinalThird = ballProgress > 0.52f && fabs(ballY) > 10.0f;
+      const float adaptedRunBias = clamp(supportRunBias + (wideFinalThird ? 0.12f : 0.0f), 0.0f, 0.68f);
+      Vector3 runTarget((pitchHalfW - (wideFinalThird ? 12.0f : 18.0f)) * -team->GetSide(),
+                        wideFinalThird ? clamp(-ballY * 0.35f, -10.0f, 10.0f)
+                                       : clamp(desiredPosition.coords[1] * 0.65f, -14.0f, 14.0f),
+                        0.0f);
+      desiredPosition = desiredPosition * (1.0f - adaptedRunBias) + runTarget * adaptedRunBias;
+      team->GetController()->ApplyOffsideTrap(desiredPosition);
+    }
+  }
+
   direction = (desiredPosition - player->GetPosition()).GetNormalized(player->GetDirectionVec());
   float desiredVelocity = (desiredPosition - player->GetPosition()).GetLength() * distanceToVelocityMultiplier;
 
