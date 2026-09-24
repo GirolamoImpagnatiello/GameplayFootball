@@ -370,6 +370,9 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   cameraCornerView = GetConfiguration()->Get("camera_corner_view", "wide");
   cameraCornerViewActive = false;
   cameraCutPending = false;
+  cameraDirector.reset(new CameraDirector(GetConfiguration()));
+  cameraType = "LEGACY";
+  cameraPhysicalId = 0;
   debugSaveCornerSequenceEnabled = GetConfiguration()->GetBool("debug_save_to_corner_sequence", false);
   debugSaveCornerSequenceStarted = false;
   debugSaveCornerDeflected = false;
@@ -1423,6 +1426,9 @@ void Match::InitializeCosmosCaptureExporter() {
     boost::filesystem::create_directories(cosmosRgbDirectory);
     boost::filesystem::create_directories(cosmosDepthDirectory);
     boost::filesystem::create_directories(cosmosSegmentationDirectory);
+    cosmosCameraMetadataFile.open(
+        (boost::filesystem::path(cosmosCaptureDirectory) / "camera_metadata.jsonl").string().c_str(),
+        std::ios::out | std::ios::trunc);
   } catch (...) {
     cosmosCaptureEnabled = false;
     cosmosCaptureComplete = true;
@@ -1462,6 +1468,7 @@ void Match::ScheduleCosmosFrameCapture() {
   cosmosCaptureLastFrameBucket = frameBucket;
   cosmosCaptureFrameCount++;
   cosmosCaptureTimestamps_ms.push_back(fetchedbuf_actualTime_ms);
+  RecordCosmosCameraMetadata();
 
   const std::string frameFilename = FormatCosmosFrameFilename(cosmosCaptureFrameCount);
   ControlFrameCaptureRequest request;
@@ -1489,8 +1496,27 @@ void Match::ScheduleCosmosFrameCapture() {
   }
 }
 
+void Match::RecordCosmosCameraMetadata() {
+  if (!cosmosCameraMetadataFile.is_open()) return;
+  const Quaternion rotation = fetchedbuf_cameraNodeOrientation * fetchedbuf_cameraOrientation;
+  cosmosCameraMetadataFile << "{\"frame\":" << cosmosCaptureFrameCount
+      << ",\"timestamp_ms\":" << fetchedbuf_actualTime_ms
+      << ",\"match_time_ms\":" << fetchedbuf_matchTime_ms
+      << ",\"camera_type\":" << Quote(fetchedbuf_cameraType)
+      << ",\"camera_id\":" << fetchedbuf_cameraPhysicalId
+      << ",\"position\":[" << fetchedbuf_cameraNodePosition.coords[0] << ","
+      << fetchedbuf_cameraNodePosition.coords[1] << ","
+      << fetchedbuf_cameraNodePosition.coords[2] << "]"
+      << ",\"rotation_xyzw\":[" << rotation.elements[0] << ","
+      << rotation.elements[1] << "," << rotation.elements[2] << ","
+      << rotation.elements[3] << "]"
+      << ",\"fov_degrees\":" << fetchedbuf_cameraFOV << "}\n";
+}
+
 void Match::FlushCosmosCaptureMetadata() {
   if (!cosmosCaptureEnabled || cosmosCaptureDirectory.empty()) return;
+
+  if (cosmosCameraMetadataFile.is_open()) cosmosCameraMetadataFile.close();
 
   const boost::filesystem::path captureRoot(cosmosCaptureDirectory);
   const std::string prompt = GetConfiguration()->Get(
@@ -1573,6 +1599,7 @@ void Match::FlushCosmosCaptureMetadata() {
         metadata << cosmosCaptureTimestamps_ms[i];
       }
       metadata << "],\n";
+      metadata << "  \"camera_metadata\": \"camera_metadata.jsonl\",\n";
       metadata << "  \"rgb_directory\": \"rgb\",\n";
       metadata << "  \"depth_directory\": \"depth\",\n";
       metadata << "  \"segmentation_directory\": \"seg\",\n";
@@ -1869,6 +1896,84 @@ void Match::UpdateIngameCamera() {
   }
 }
 
+void Match::UpdateDirectedCamera() {
+  if (!cameraDirector || !cameraDirector->IsEnabled()) return;
+
+  const bool goalCameraWasActive = cameraType == "GOAL_CELEBRATION";
+
+  const Vector3 ballPosition = ball->Predict(0);
+  Vector3 nearbyCenter = ballPosition;
+  float nearbyCount = 1.0f;
+  for (int teamID = 0; teamID < 2; ++teamID) {
+    std::vector<Player*> players;
+    GetActiveTeamPlayers(teamID, players);
+    for (std::size_t i = 0; i < players.size(); ++i) {
+      if (!players[i]) continue;
+      const Vector3 position = players[i]->GetPosition();
+      if ((position.Get2D() - ballPosition.Get2D()).GetLength() <= 20.0f) {
+        nearbyCenter += position;
+        nearbyCount += 1.0f;
+      }
+    }
+  }
+  nearbyCenter /= nearbyCount;
+
+  Vector3 actionDirection = ball->GetMovement().Get2D();
+  if (actionDirection.GetLength() < 0.5f && GetDesignatedPossessionPlayer()) {
+    actionDirection = GetDesignatedPossessionPlayer()->GetDirectionVec().Get2D();
+  }
+
+  const RefereeBuffer &restart = referee->GetBuffer();
+  CameraDirectorInput input;
+  input.time_ms = actualTime_ms;
+  input.delta_ms = static_cast<unsigned long>(std::max(0, timeSincePreviousPreparePut_ms));
+  input.ballPosition = ballPosition;
+  input.ballMovement = ball->GetMovement();
+  input.nearbyPlayersCenter = nearbyCenter;
+  input.nearbyPlayerCount = static_cast<unsigned int>(std::max(0.0f, nearbyCount - 1.0f));
+  input.primaryPlayerPosition = GetDesignatedPossessionPlayer() ?
+      GetDesignatedPossessionPlayer()->GetPosition() : nearbyCenter;
+  input.actionDirection = actionDirection;
+  input.inPlay = IsInPlay();
+  input.setPieceActive = restart.active || IsInSetPiece();
+  input.setPiece = restart.active ? restart.desiredSetPiece : e_SetPiece_None;
+  input.setPieceStartTime_ms = restart.active ? restart.startTime : 0;
+
+  const CameraDirectorOutput output = cameraDirector->Update(input);
+  cameraNodePosition = output.position;
+  cameraNodeOrientation.SetAngleAxis(output.yaw, Vector3(0, 0, 1));
+  cameraOrientation.SetAngleAxis(output.pitch, Vector3(1, 0, 0));
+  cameraFOV = output.fov;
+  cameraNearCap = output.nearCap;
+  cameraFarCap = output.farCap;
+  cameraType = output.cameraName;
+  cameraPhysicalId = output.cameraId;
+  if (output.cut && !goalCameraWasActive) cameraCutPending = true;
+
+  // The scorer shot remains an editorial override, just as it was with the
+  // legacy match camera.
+  if (IsGoalScored() && goalScoredTimer >= 1000) {
+    Vector3 targetPos = ball->Predict(0).Get2D();
+    if (lastGoalScorer) targetPos = lastGoalScorer->GetPosition();
+    const radian rotation = static_cast<float>(goalScoredTimer) * 0.0005f;
+    cameraOrientation.SetAngleAxis(0.45f * pi, Vector3(1, 0, 0));
+    cameraNodeOrientation.SetAngleAxis(rotation, Vector3(0, 0, 1));
+    cameraNodePosition = targetPos + Vector3(0, -1, 0).GetRotated2D(rotation) * 15.0f + Vector3(0, 0, 3);
+    cameraFOV = 35.0f;
+    cameraNearCap = 0.5f;
+    cameraFarCap = 220.0f;
+    cameraType = "GOAL_CELEBRATION";
+    cameraPhysicalId = 200000u + static_cast<unsigned int>(GetScore(0) + GetScore(1));
+    if (!goalCameraWasActive) cameraCutPending = true;
+    if (goalScoredTimer == 6000) {
+      pause = true;
+      sig_OnExtendedReplayMoment(this);
+    }
+  } else if (goalCameraWasActive) {
+    cameraCutPending = true;
+  }
+}
+
 
 // THE SPICE
 
@@ -2066,6 +2171,8 @@ void Match::Process() {
 
       if (GetReferee()->GetBuffer().prepareTime > GetActualTime_ms()) { // FOUL, film referee
         SetAutoUpdateIngameCamera(false);
+        cameraType = "REFEREE_CARD";
+        cameraPhysicalId = 100000u + static_cast<unsigned int>(GetReferee()->GetBuffer().stopTime);
         FollowCamera(cameraOrientation, cameraNodeOrientation, cameraNodePosition, cameraFOV, officials->GetReferee()->GetPosition() + Vector3(0, 0, 0.8f), 1.5f);
         cameraNearCap = 1;
         cameraFarCap = 220;
@@ -2078,7 +2185,10 @@ void Match::Process() {
 
   } // end if !pause
 
-  if (autoUpdateIngameCamera) UpdateIngameCamera();
+  if (autoUpdateIngameCamera) {
+    if (cameraDirector && cameraDirector->IsEnabled()) UpdateDirectedCamera();
+    else UpdateIngameCamera();
+  }
   ApplyDebugSaveCornerCamera();
 
   if (!pause) {
@@ -2210,6 +2320,8 @@ void Match::PreparePutBuffers() {
   buf_cameraFOV.SetValue(cameraFOV, snapshotTime_ms);
   buf_cameraNearCap = cameraNearCap;
   buf_cameraFarCap = cameraFarCap;
+  buf_cameraType = cameraType;
+  buf_cameraPhysicalId = cameraPhysicalId;
 
   buf_matchTime_ms = matchTime_ms;
   buf_actualTime_ms = actualTime_ms;
@@ -2239,6 +2351,8 @@ void Match::FetchPutBuffers() {
   fetchedbuf_cameraFOV = buf_cameraFOV.GetValue(putTime_ms);
   fetchedbuf_cameraNearCap = buf_cameraNearCap;
   fetchedbuf_cameraFarCap = buf_cameraFarCap;
+  fetchedbuf_cameraType = buf_cameraType;
+  fetchedbuf_cameraPhysicalId = buf_cameraPhysicalId;
 
   if (!GetPause()) {
     ball->FetchPutBuffers(putTime_ms);

@@ -139,6 +139,36 @@ The simulator can export a short Cosmos Transfer capture with synchronized RGB, 
 "cosmos_capture_prompt" "A photorealistic broadcast soccer match in a modern stadium, realistic grass, players, ball, lighting and camera motion."
 ```
 
+### Broadcast camera director
+
+The match camera supports `legacy`, `single`, `scheduled`, and `procedural`
+modes. Preset anchors are expressed relative to the 110 x 72 metre pitch, and
+camera changes are hard cuts; pan, tilt, and FOV remain smooth within a shot.
+
+```text
+"camera_mode" "scheduled"
+"single_camera" "false"
+"camera_changes" "true"
+"camera_schedule" "0:MAIN_BROADCAST,4:HIGH_GOAL_SIDE,7:MAIN_BROADCAST"
+"camera_seed" "2026"
+"camera_clip_duration_s" "5"
+"camera_max_cuts_per_clip" "1"
+```
+
+Available presets are `MAIN_BROADCAST`, `HIGH_WIDE`, `HIGH_GOAL_SIDE`,
+`LOW_TOUCHLINE`, `LOW_GOAL_SIDE`, `CORNER`, `BEHIND_GOAL`, and the optional
+`CLOSE_UP`. Set `camera_mode=procedural` and `single_camera=false` for weighted,
+context-aware, seed-reproducible selection. Each weight can be overridden with
+`camera_<PRESET>_weight`; shot bounds use `camera_<PRESET>_min_shot_s` and
+`camera_<PRESET>_max_shot_s`, and the base FOV uses
+`camera_<PRESET>_fov`. `camera_close_up_enabled` defaults to false and close-ups
+are eligible only while play is stopped.
+
+Cosmos captures also write `camera_metadata.jsonl`, one record per rendered
+frame, with timestamp, preset, physical camera id, position, quaternion, and
+FOV. The existing RGB, depth, and segmentation requests still share the active
+camera for the frame.
+
 When a match enters normal play, the capture is written under `output/cosmos_transfer/capture_YYYYMMDD_HHMMSS` with `rgb`, `depth`, `seg`, `metadata.json`, `prompt.json` and `cosmos_transfer_spec.json`.
 
 Capture defaults to `"cosmos_capture_lockstep" "true"`: physics and rendering run in order, and slow image writes delay simulation instead of losing frames. At `"cosmos_capture_fps" "25"`, consecutive images represent exactly 40 ms of simulation, even when producing 10 seconds of video takes longer than 10 seconds. Camera and player smoothing also use simulation time. The bounded GPU and PNG queues keep capture memory from growing with recording length.

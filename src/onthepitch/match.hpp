@@ -11,6 +11,7 @@
 #include "ball.hpp"
 #include "referee.hpp"
 #include "officials.hpp"
+#include "camera_director.hpp"
 
 #include "../data/matchdata.hpp"
 #include "player/humanoid/animcollection.hpp"
@@ -210,7 +211,7 @@ class Match {
     void FollowCamera(Quaternion &orientation, Quaternion &nodeOrientation, Vector3 &position, float &FOV, const Vector3 &targetPosition, float zoom);
     void SetReplayCamera(int camType, const Vector3 &target, float modifierValue);
 
-    void SetAutoUpdateIngameCamera(bool autoUpdate = true) { if (autoUpdate != autoUpdateIngameCamera) { camPos.clear(); autoUpdateIngameCamera = autoUpdate; } }
+    void SetAutoUpdateIngameCamera(bool autoUpdate = true) { if (autoUpdate != autoUpdateIngameCamera) { camPos.clear(); cameraCutPending = true; autoUpdateIngameCamera = autoUpdate; } }
 
     int GetReplaySize_ms();
     int GetReplayCamCount();
@@ -271,6 +272,8 @@ class Match {
     void InitializeCosmosCaptureExporter();
     void ScheduleCosmosFrameCapture();
     void FlushCosmosCaptureMetadata();
+    void UpdateDirectedCamera();
+    void RecordCosmosCameraMetadata();
     void ExtractCosmosEventClips();
 
     void PrepareGoalNetting();
@@ -293,6 +296,7 @@ class Match {
 
     boost::intrusive_ptr<Node> cameraNode;
     boost::intrusive_ptr<Camera> camera;
+    std::unique_ptr<CameraDirector> cameraDirector;
     boost::intrusive_ptr<Node> sunNode;
 
     boost::intrusive_ptr<Node> stadiumNode;
@@ -396,6 +400,7 @@ class Match {
     std::string cosmosRgbDirectory;
     std::string cosmosDepthDirectory;
     std::string cosmosSegmentationDirectory;
+    std::ofstream cosmosCameraMetadataFile;
 
     // camera
     Quaternion cameraOrientation;
@@ -404,6 +409,8 @@ class Match {
     float cameraFOV;
     float cameraNearCap;
     float cameraFarCap;
+    std::string cameraType;
+    unsigned int cameraPhysicalId;
 
     TemporalSmoother<Quaternion> buf_cameraOrientation;
     TemporalSmoother<Quaternion> buf_cameraNodeOrientation;
@@ -411,12 +418,16 @@ class Match {
     TemporalSmoother<float> buf_cameraFOV;
     float buf_cameraNearCap;
     float buf_cameraFarCap;
+    std::string buf_cameraType;
+    unsigned int buf_cameraPhysicalId;
     Quaternion fetchedbuf_cameraOrientation;
     Quaternion fetchedbuf_cameraNodeOrientation;
     Vector3 fetchedbuf_cameraNodePosition;
     float fetchedbuf_cameraFOV;
     float fetchedbuf_cameraNearCap;
     float fetchedbuf_cameraFarCap;
+    std::string fetchedbuf_cameraType;
+    unsigned int fetchedbuf_cameraPhysicalId;
 
     int fetchedbuf_timeDelta;
 
