@@ -1515,7 +1515,11 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
         const bool isPitchSurface = queueEntry->semanticColor.coords[0] == 0.10f &&
                                     queueEntry->semanticColor.coords[1] == 0.65f &&
                                     queueEntry->semanticColor.coords[2] == 0.18f;
+        const bool isCrowdSurface = queueEntry->semanticColor.coords[0] == 128.0f / 255.0f &&
+                                    queueEntry->semanticColor.coords[1] == 0.0f &&
+                                    queueEntry->semanticColor.coords[2] == 128.0f / 255.0f;
         SetUniformInt("semantic", "isPitchSurface", isPitchSurface ? 1 : 0);
+        SetUniformInt("semantic", "isCrowdSurface", isCrowdSurface ? 1 : 0);
       }
 
       bool sequential = true; // buffer vertexbuffer chunks until a change happens (in texture or index, for example)
@@ -1545,6 +1549,10 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
           }
           currentSemanticColor = vbIndex->semanticColor;
           SetUniformFloat3("semantic", "semanticColor", currentSemanticColor.coords[0], currentSemanticColor.coords[1], currentSemanticColor.coords[2]);
+          const bool isCrowdSurface = currentSemanticColor.coords[0] == 128.0f / 255.0f &&
+                                      currentSemanticColor.coords[1] == 0.0f &&
+                                      currentSemanticColor.coords[2] == 128.0f / 255.0f;
+          SetUniformInt("semantic", "isCrowdSurface", isCrowdSurface ? 1 : 0);
         }
 
         if (renderMode != e_RenderMode_GeometryOnly) {

@@ -1569,11 +1569,11 @@ void Match::FlushCosmosCaptureMetadata() {
       metadata << "  \"capture_format\": " << Quote(format) << ",\n";
       metadata << "  \"team_aware\": " << (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false) ? "true" : "false") << ",\n";
       const bool segmentationV2 = GetConfiguration()->GetBool("cosmos_segmentation_v2", true);
-      metadata << "  \"segmentation_version\": " << (segmentationV2 ? 2 : 1) << ",\n";
-      metadata << "  \"team_palette\": {\"home\": [0,0,255], \"away\": [255,0,0], \"official\": [0,255,255]},\n";
+      metadata << "  \"segmentation_version\": " << (segmentationV2 ? 3 : 1) << ",\n";
+      metadata << "  \"team_palette\": {\"home\": [0,0,255], \"away\": [255,0,0], \"home_goalkeeper\": [128,160,255], \"away_goalkeeper\": [0,64,0], \"official\": [0,255,255]},\n";
       metadata << "  \"semantic_palette\": {\"field_lines\": [255,0,255], \"pitch\": [25,166,46], \"ball\": [255,242,46], \"goal\": [217,217,217], \"other\": [115,115,115]";
       if (segmentationV2) {
-        metadata << ", \"advertising_board\": [255,128,0], \"stadium_barrier_or_wall\": [0,128,128], \"crowd\": [128,0,128], \"stands_structure\": [160,96,48]";
+        metadata << ", \"advertising_board\": [255,128,0], \"stadium_barrier_or_wall\": [0,128,128], \"crowd\": [128,0,128], \"seats\": [0,0,96], \"stands_structure\": [160,96,48]";
       } else {
         metadata << ", \"stadium\": [140,115,191]";
       }

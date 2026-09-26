@@ -115,10 +115,18 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
   fullbodyTargetNode->AddNode(fullbodyNode);
 
   // Semantic identity comes from the simulation, never from jersey pixels or
-  // field side (teams switch sides). Goalkeepers retain their team's label.
-  const Player *teamPlayer = dynamic_cast<Player*>(player);
-  const std::string semanticClass = teamPlayer ?
-    (teamPlayer->GetTeamID() == 0 ? "home" : "away") : "official";
+  // field side (teams switch sides). Goalkeepers get a team-specific class so
+  // a video generator can assign each keeper a stable, distinct kit.
+  Player *teamPlayer = dynamic_cast<Player*>(player);
+  std::string semanticClass = "official";
+  if (teamPlayer) {
+    const bool isGoalkeeper = teamPlayer->GetFormationEntry().role == e_PlayerRole_GK;
+    if (isGoalkeeper) {
+      semanticClass = teamPlayer->GetTeamID() == 0 ? "home_goalkeeper" : "away_goalkeeper";
+    } else {
+      semanticClass = teamPlayer->GetTeamID() == 0 ? "home" : "away";
+    }
+  }
   if (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false)) {
     fullbodyNode->GetObject("fullbody")->SetProperty("capture_class", semanticClass.c_str());
   }

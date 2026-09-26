@@ -45,6 +45,8 @@ namespace blunted {
         const std::string label = geometry->GetProperty("capture_class");
         if (label == "home") return Vector3(0, 0, 1);
         if (label == "away") return Vector3(1, 0, 0);
+        if (label == "home_goalkeeper") return Vector3(128.0f / 255.0f, 160.0f / 255.0f, 1.0f);
+        if (label == "away_goalkeeper") return Vector3(0, 64.0f / 255.0f, 0);
         if (label == "official") return Vector3(0, 1, 1);
         if (label == "advertising_board") return Vector3(1.0f, 128.0f / 255.0f, 0);
         if (label == "stadium_barrier_or_wall") return Vector3(0, 128.0f / 255.0f, 128.0f / 255.0f);
