@@ -5,6 +5,8 @@
 #include "r3d_messages.hpp"
 
 #include "../resources/texture.hpp"
+#include "../../../main.hpp"
+#include "../../../environment_profile.hpp"
 
 namespace blunted {
 
@@ -222,6 +224,12 @@ namespace blunted {
     renderer->SetUniformMatrix4("ambient", "projectionMatrix", projectionMatrix);
     renderer->SetUniformMatrix4("ambient", "viewMatrix", viewMatrix);
 
+    const EnvironmentProfile environment = GetEnvironmentProfile(*GetConfiguration());
+    renderer->SetUniformFloat3("ambient", "ambientTint", environment.ambientTint.coords[0], environment.ambientTint.coords[1], environment.ambientTint.coords[2]);
+    renderer->SetUniformFloat("ambient", "ambientBrightness", environment.ambientBrightness);
+    renderer->SetUniformFloat("ambient", "ambientDesaturation", environment.ambientDesaturation);
+    renderer->SetUniformFloat("ambient", "pitchAmbientScale", environment.pitchAmbientScale);
+
     renderer->SetDepthTesting(false);
     renderer->SetDepthMask(false);
 
@@ -283,6 +291,12 @@ namespace blunted {
     renderer->SetUniformFloat("postprocess", "contextY", (float)(height - (view.y + view.height)));
     renderer->SetUniformFloat2("postprocess", "cameraClip", depthParamNear, depthParamFar);
     renderer->SetUniformFloat("postprocess", "fogScale", 0.8f - NormalizedClamp(buffer.cameraFOV, 20, 100) * 0.6f);
+    renderer->SetUniformFloat3("postprocess", "fogColor", environment.fogColor.coords[0], environment.fogColor.coords[1], environment.fogColor.coords[2]);
+    renderer->SetUniformFloat3("postprocess", "skyColor", environment.skyColor.coords[0], environment.skyColor.coords[1], environment.skyColor.coords[2]);
+    renderer->SetUniformFloat("postprocess", "fogDensity", environment.fogDensity);
+    renderer->SetUniformFloat("postprocess", "environmentBrightness", environment.postBrightness);
+    renderer->SetUniformFloat("postprocess", "environmentContrast", environment.postContrast);
+    renderer->SetUniformFloat("postprocess", "environmentSaturation", environment.postSaturation);
 
     renderer->SetViewport(view.x, height - (view.y + view.height), view.width, view.height);
 

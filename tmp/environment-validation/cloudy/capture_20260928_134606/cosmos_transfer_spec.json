@@ -1,0 +1,22 @@
+{
+  "name": "gameplayfootball_transfer_depth_seg",
+  "model_mode": "video2video",
+  "resolution": "720",
+  "aspect_ratio": "16,9",
+  "num_frames": 3,
+  "fps": 25,
+  "shift": 7,
+  "num_steps": 35,
+  "seed": 2026,
+  "num_video_frames_per_chunk": 3,
+  "num_conditional_frames": 1,
+  "num_first_chunk_conditional_frames": 0,
+  "share_vision_temporal_positions": true,
+  "negative_metadata_mode": "none",
+  "negative_prompt_keep_metadata": false,
+  "guidance": 4,
+  "control_guidance": 1,
+  "prompt_path": "prompt.json",
+  "depth": { "control_path": "control_depth.mp4" },
+  "seg": { "control_path": "control_seg.mp4" }
+}

@@ -22,6 +22,11 @@ uniform float contextY;
 
 uniform vec2 cameraClip;
 
+uniform vec3 ambientTint;
+uniform float ambientBrightness;
+uniform float ambientDesaturation;
+uniform float pitchAmbientScale;
+
 const int SSAO_kernelSize = 32; // don't make larger than this: 32 is hardcoded in source, so no more sample positions exist
 //uniform int SSAO_kernelSize; // won't work until glsl 4.3 or so.
 uniform vec3 SSAO_kernel[SSAO_kernelSize];
@@ -121,17 +126,15 @@ void main(void) {
 
   vec3 worldPosition = GetWorldPosition(texCoord, depth);
 
-  vec3 base = texture2D(map_albedo, texCoord).xyz;
+  vec3 albedo = texture2D(map_albedo, texCoord).xyz;
+  vec3 base = albedo;
 
-  float brightness = 0.15f;//0.25f;
-
-  // blueish tint + brightness
+  // Environment-controlled ambient contribution.
   vec3 baseDesaturated = vec3((base.r + base.g + base.b) / 3);
-  base = baseDesaturated * 0.7 + base * 0.3;
-  base *= vec3(0.9f, 1.0f, 1.2f) * brightness;
-  // Keep the pitch's texture color visible when directional light is weak.
+  base = baseDesaturated * ambientDesaturation + base * (1.0f - ambientDesaturation);
+  base *= ambientTint * ambientBrightness;
   if (abs(worldPosition.z) < 0.15 && abs(worldPosition.x) < 60.0 && abs(worldPosition.y) < 40.0)
-    base = texture2D(map_albedo, texCoord).xyz * 0.65f;
+    base = texture2D(map_albedo, texCoord).xyz * ambientTint * pitchAmbientScale;
 
   // screen space ambient occlusion
   // normal-oriented hemisphere method, (c) john chapman
@@ -194,10 +197,12 @@ void main(void) {
   vec4 aux = texture2D(map_aux, texCoord.st);
   float self_illumination = aux.w;
 
-  vec3 fragColor = vec3(clamp(base * (1.0 + self_illumination), 0.0, 1.0));
+  // Emissive surfaces remain luminous even when the night ambient term is
+  // intentionally low. They are also unaffected by SSAO, as actual lamps are.
+  vec3 fragColor = vec3(clamp(base * SSAO + albedo * self_illumination, 0.0, 1.0));
 
   //stdout0 = vec4(vec3(depth / 2.0f), 1.0);
-  stdout0 = vec4(fragColor * SSAO, 1.0);
+  stdout0 = vec4(fragColor, 1.0);
   stdout1.r = GetEdge(texCoord); // AA
   stdout1.g = SSAO;
 }

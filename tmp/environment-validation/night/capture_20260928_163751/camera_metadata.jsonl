@@ -1,0 +1,3 @@
+{"frame":1,"timestamp_ms":620,"match_time_ms":0,"camera_type":"MAIN_BROADCAST","camera_id":1,"position":[0,-8.75544,51.9371],"rotation_xyzw":[-0.115023,7.86995e-05,0.000679664,-0.993363],"fov_degrees":38.7653}
+{"frame":2,"timestamp_ms":660,"match_time_ms":0,"camera_type":"MAIN_BROADCAST","camera_id":1,"position":[0,-9.85904,50.9208],"rotation_xyzw":[-0.129445,9.97302e-05,0.000763965,-0.991586],"fov_degrees":38.6097}
+{"frame":3,"timestamp_ms":700,"match_time_ms":0,"camera_type":"MAIN_BROADCAST","camera_id":1,"position":[0,-11.0076,49.8631],"rotation_xyzw":[-0.144424,0.000124233,0.000851181,-0.989516],"fov_degrees":38.4477}

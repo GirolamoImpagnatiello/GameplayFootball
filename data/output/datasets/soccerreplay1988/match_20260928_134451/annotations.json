@@ -1,0 +1,498 @@
+{
+  "match_information": {
+    "timestamp": "2026-09-28 13:44:51",
+    "score": "0 - 0",
+    "home_team": "Aston Villa",
+    "away_team": "Crystal Palace",
+    "home_formation": "4 - 5 - 1",
+    "away_formation": "4 - 5 - 1",
+    "venue": "",
+    "capacity": "",
+    "attendance": ""
+  },
+  "referee_information": {
+    "country": "",
+    "name": ""
+  },
+  "player_information": [
+    {
+      "players_name": "Taylor C.",
+      "players_number": "1",
+      "Full Name": "Callum Taylor",
+      "players_rating": "",
+      "Country": "",
+      "Role": "GK",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Cooper G.",
+      "players_number": "2",
+      "Full Name": "George Cooper",
+      "players_rating": "",
+      "Country": "",
+      "Role": "LB",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Mason J.",
+      "players_number": "3",
+      "Full Name": "James Mason",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CB",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Bennett R.",
+      "players_number": "4",
+      "Full Name": "Ryan Bennett",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CB",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Gray C.",
+      "players_number": "5",
+      "Full Name": "Callum Gray",
+      "players_rating": "",
+      "Country": "",
+      "Role": "RB",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Walker G.",
+      "players_number": "6",
+      "Full Name": "George Walker",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Davies J.",
+      "players_number": "7",
+      "Full Name": "James Davies",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Parker R.",
+      "players_number": "8",
+      "Full Name": "Ryan Parker",
+      "players_rating": "",
+      "Country": "",
+      "Role": "LM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Clarke C.",
+      "players_number": "9",
+      "Full Name": "Callum Clarke",
+      "players_rating": "",
+      "Country": "",
+      "Role": "AM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Hughes G.",
+      "players_number": "10",
+      "Full Name": "George Hughes",
+      "players_rating": "",
+      "Country": "",
+      "Role": "RM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Baker J.",
+      "players_number": "11",
+      "Full Name": "James Baker",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CF",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Foster R.",
+      "players_number": "12",
+      "Full Name": "Ryan Foster",
+      "players_rating": "",
+      "Country": "",
+      "Role": "undefined",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Taylor C.",
+      "players_number": "13",
+      "Full Name": "Callum Taylor",
+      "players_rating": "",
+      "Country": "",
+      "Role": "undefined",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Cooper G.",
+      "players_number": "14",
+      "Full Name": "George Cooper",
+      "players_rating": "",
+      "Country": "",
+      "Role": "GK",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Mason J.",
+      "players_number": "15",
+      "Full Name": "James Mason",
+      "players_rating": "",
+      "Country": "",
+      "Role": "undefined",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Bennett R.",
+      "players_number": "16",
+      "Full Name": "Ryan Bennett",
+      "players_rating": "",
+      "Country": "",
+      "Role": "GK",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Gray C.",
+      "players_number": "17",
+      "Full Name": "Callum Gray",
+      "players_rating": "",
+      "Country": "",
+      "Role": "undefined",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Walker G.",
+      "players_number": "18",
+      "Full Name": "George Walker",
+      "players_rating": "",
+      "Country": "",
+      "Role": "GK",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Foster B.",
+      "players_number": "1",
+      "Full Name": "Ben Foster",
+      "players_rating": "",
+      "Country": "",
+      "Role": "GK",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Taylor E.",
+      "players_number": "2",
+      "Full Name": "Ethan Taylor",
+      "players_rating": "",
+      "Country": "",
+      "Role": "LB",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Cooper J.",
+      "players_number": "3",
+      "Full Name": "Jack Cooper",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CB",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Mason O.",
+      "players_number": "4",
+      "Full Name": "Oliver Mason",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CB",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Bennett B.",
+      "players_number": "5",
+      "Full Name": "Ben Bennett",
+      "players_rating": "",
+      "Country": "",
+      "Role": "RB",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Gray E.",
+      "players_number": "6",
+      "Full Name": "Ethan Gray",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Walker J.",
+      "players_number": "7",
+      "Full Name": "Jack Walker",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Davies O.",
+      "players_number": "8",
+      "Full Name": "Oliver Davies",
+      "players_rating": "",
+      "Country": "",
+      "Role": "LM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Parker B.",
+      "players_number": "9",
+      "Full Name": "Ben Parker",
+      "players_rating": "",
+      "Country": "",
+      "Role": "AM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Clarke E.",
+      "players_number": "10",
+      "Full Name": "Ethan Clarke",
+      "players_rating": "",
+      "Country": "",
+      "Role": "RM",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Hughes J.",
+      "players_number": "11",
+      "Full Name": "Jack Hughes",
+      "players_rating": "",
+      "Country": "",
+      "Role": "CF",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Baker O.",
+      "players_number": "12",
+      "Full Name": "Oliver Baker",
+      "players_rating": "",
+      "Country": "",
+      "Role": "undefined",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Foster B.",
+      "players_number": "13",
+      "Full Name": "Ben Foster",
+      "players_rating": "",
+      "Country": "",
+      "Role": "undefined",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Taylor E.",
+      "players_number": "14",
+      "Full Name": "Ethan Taylor",
+      "players_rating": "",
+      "Country": "",
+      "Role": "GK",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Cooper J.",
+      "players_number": "15",
+      "Full Name": "Jack Cooper",
+      "players_rating": "",
+      "Country": "",
+      "Role": "undefined",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Mason O.",
+      "players_number": "16",
+      "Full Name": "Oliver Mason",
+      "players_rating": "",
+      "Country": "",
+      "Role": "GK",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Bennett B.",
+      "players_number": "17",
+      "Full Name": "Ben Bennett",
+      "players_rating": "",
+      "Country": "",
+      "Role": "undefined",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    },
+    {
+      "players_name": "Gray E.",
+      "players_number": "18",
+      "Full Name": "Ethan Gray",
+      "players_rating": "",
+      "Country": "",
+      "Role": "GK",
+      "Age and Birthdate": "",
+      "Market Value": ""
+    }
+  ],
+  "event_labels": [
+    "corner",
+    "goal",
+    "injury",
+    "own goal",
+    "penalty",
+    "penalty missed",
+    "red card",
+    "second yellow card",
+    "substitution",
+    "start of game(half)",
+    "end of game(half)",
+    "yellow card",
+    "throw in",
+    "free kick",
+    "saved by goal-keeper",
+    "shot off target",
+    "clearance",
+    "lead to corner",
+    "off-side",
+    "var",
+    "foul (no card)",
+    "statistics and summary",
+    "ball possession",
+    "ball out of play"
+  ],
+  "event_descriptions": [
+    {
+      "half": 1,
+      "time_stamp": "00:00",
+      "comments_type": "start of game(half)",
+      "comments_text": "Start of first half.",
+      "comments_text_anonymized": "Start of first half."
+    },
+    {
+      "half": 1,
+      "time_stamp": "00:00",
+      "comments_type": "ball possession",
+      "comments_text": "Aston Villa controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 1,
+      "time_stamp": "07:54",
+      "comments_type": "ball possession",
+      "comments_text": "Crystal Palace controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 1,
+      "time_stamp": "18:58",
+      "comments_type": "ball possession",
+      "comments_text": "Aston Villa controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 1,
+      "time_stamp": "26:28",
+      "comments_type": "ball possession",
+      "comments_text": "Crystal Palace controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 1,
+      "time_stamp": "33:58",
+      "comments_type": "ball possession",
+      "comments_text": "Aston Villa controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 1,
+      "time_stamp": "42:33",
+      "comments_type": "ball possession",
+      "comments_text": "Crystal Palace controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 1,
+      "time_stamp": "45:00",
+      "comments_type": "end of game(half)",
+      "comments_text": "End of first half.",
+      "comments_text_anonymized": "End of first half."
+    },
+    {
+      "half": 2,
+      "time_stamp": "00:00",
+      "comments_type": "start of game(half)",
+      "comments_text": "Start of second half.",
+      "comments_text_anonymized": "Start of second half."
+    },
+    {
+      "half": 2,
+      "time_stamp": "03:38",
+      "comments_type": "ball possession",
+      "comments_text": "Aston Villa controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 2,
+      "time_stamp": "11:08",
+      "comments_type": "ball possession",
+      "comments_text": "Crystal Palace controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 2,
+      "time_stamp": "18:57",
+      "comments_type": "ball possession",
+      "comments_text": "Aston Villa controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    },
+    {
+      "half": 2,
+      "time_stamp": "31:25",
+      "comments_type": "ball possession",
+      "comments_text": "Crystal Palace controls possession.",
+      "comments_text_anonymized": "[TEAM] controls possession."
+    }
+  ]
+}

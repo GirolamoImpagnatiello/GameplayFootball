@@ -520,6 +520,13 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
     while (lightIter != lightQueue.end()) {
       const LightQueueEntry &light = (*lightIter);
 
+      // Disabled environment lights stay in the scene so profiles can be
+      // changed at runtime, but should not cost a fullscreen lighting pass.
+      if (std::max(light.color.coords[0], std::max(light.color.coords[1], light.color.coords[2])) <= 0.0001f) {
+        ++lightIter;
+        continue;
+      }
+
       // todo: add light types SetUniformInt("lighting", "lightType", (int)light.type);
 
       // bind shadow map

@@ -298,6 +298,8 @@ class Match {
     boost::intrusive_ptr<Camera> camera;
     std::unique_ptr<CameraDirector> cameraDirector;
     boost::intrusive_ptr<Node> sunNode;
+    boost::intrusive_ptr<Node> stadiumFloodlightNode;
+    std::vector<boost::intrusive_ptr<Light> > stadiumLights;
 
     boost::intrusive_ptr<Node> stadiumNode;
     boost::intrusive_ptr<Node> goalsNode;

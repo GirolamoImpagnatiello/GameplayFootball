@@ -1,0 +1,10 @@
+<object>
+
+	<geometry>
+		<filename>stadium_floodlights.ase</filename>
+		<name>stadium floodlight emissive banks</name>
+		<position>0, 0, 0</position>
+		<rotation>0, 0, 0, 0</rotation>
+	</geometry>
+
+</object>

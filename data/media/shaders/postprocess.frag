@@ -14,6 +14,12 @@ uniform float contextY;
 uniform vec2 cameraClip;
 
 uniform float fogScale;
+uniform vec3 fogColor;
+uniform vec3 skyColor;
+uniform float fogDensity;
+uniform float environmentBrightness;
+uniform float environmentContrast;
+uniform float environmentSaturation;
 
 out vec4 stdout;
 
@@ -106,19 +112,12 @@ void main(void) {
   // convert from non-linear to linear
   float fragDepth = cameraClip.y / (depth - cameraClip.x);
 
-//  vec3 fogColor = vec3(0.84, 0.98, 1.0);
-//  vec3 fogColor = vec3(1.0, 0.9, 0.86);
-//  vec3 fogColor = vec3(0.85, 0.65, 1.0);
-  vec3 fogColor = vec3(0.85, 0.85, 0.9);
-
-  float fogFactor = clamp(fragDepth * 0.01f * (1.0f - fogScale) - 0.16f * fogScale, 0.0f, 0.25f);
+  float fogFactor = clamp((fragDepth * 0.01f * (1.0f - fogScale) - 0.16f * fogScale) * fogDensity, 0.0f, 0.45f);
 
   fragColor = fragColor * (1.0f - fogFactor) + fogColor * fogFactor;
-  if (depth > 0.999f) fragColor = fogColor; // fill 'background'/sky
+  if (depth > 0.999f) fragColor = skyColor; // fill 'background'/sky
 
-  float brightness = 1.0f;
-  float contrastBias = 0.3f;//0.1f; // 0 == normal .. 1 == 'fake hdri'
-  float saturation = 0.95f * (0.4f + SSAO * 0.6f); // SSAO shadows are less saturated
+  float saturation = environmentSaturation * (0.4f + SSAO * 0.6f); // SSAO shadows are less saturated
 
   // now happens automagically because of glEnable(GL_FRAMEBUFFER_SRGB)
 /*
@@ -127,8 +126,8 @@ void main(void) {
   fragColor.b = GammaCorrection(fragColor.b, gamma);
 */
 
-  fragColor = ContrastSaturationBrightness(fragColor, brightness, 1.0f, saturation);
-  fragColor = AlternateContrast(fragColor, contrastBias);
+  fragColor = ContrastSaturationBrightness(fragColor, environmentBrightness, 1.0f, saturation);
+  fragColor = AlternateContrast(fragColor, environmentContrast);
   fragColor = clamp(fragColor, 0.0, 1.0);
 
   //gl_FragColor = vec4(fragColor, 0);

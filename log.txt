@@ -1,0 +1,9 @@
+[Notice] in [WorkerThread::operator()()]: Starting worker thread
+[Notice] in [WorkerThread::operator()()]: Starting worker thread
+[Notice] in [WorkerThread::operator()()]: Starting worker thread
+[Notice] in [WorkerThread::operator()()]: Starting worker thread
+[Notice] in [WorkerThread::operator()()]: Starting worker thread
+[Notice] in [WorkerThread::operator()()]: Starting worker thread
+[Notice] in [WorkerThread::operator()()]: Starting worker thread
+[Notice] in [WorkerThread::operator()()]: Starting worker thread
+[FATAL ERROR !!! N00000 !!!] in [main::()]: Could not open database

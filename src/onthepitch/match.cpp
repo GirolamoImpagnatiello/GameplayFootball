@@ -5,6 +5,7 @@
 #include "match.hpp"
 
 #include "../main.hpp"
+#include "../environment_profile.hpp"
 
 #include "proceduralpitch.hpp"
 
@@ -445,6 +446,30 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
 
   sunNode = loader.LoadObject(GetScene3D(), "media/objects/lighting/generic.object");
   GetDynamicNode()->AddNode(sunNode);
+
+  // Visible luminaire banks. Their emissive material provides the bright lamp
+  // surface; the Light objects below provide the actual illumination/shadows.
+  stadiumFloodlightNode = loader.LoadObject(GetScene3D(), "media/objects/lighting/stadium_floodlights.object");
+  stadiumFloodlightNode->SetLocalMode(e_LocalMode_Absolute);
+  GetScene3D()->AddNode(stadiumFloodlightNode);
+
+  const Vector3 stadiumLightPositions[] = {
+    Vector3(-0.85f, -0.55f, 0.75f) * 10000.0f,
+    Vector3(-0.85f, 0.55f, 0.75f) * 10000.0f,
+    Vector3(0.85f, -0.55f, 0.75f) * 10000.0f,
+    Vector3(0.85f, 0.55f, 0.75f) * 10000.0f
+  };
+  for (unsigned int i = 0; i < sizeof(stadiumLightPositions) / sizeof(stadiumLightPositions[0]); ++i) {
+    boost::intrusive_ptr<Light> light = static_pointer_cast<Light>(
+      ObjectFactory::GetInstance().CreateObject("stadium floodlight #" + int_to_str(i), e_ObjectType_Light));
+    GetScene3D()->CreateSystemObjects(light);
+    light->SetShadow(false);
+    light->SetType(e_LightType_Directional);
+    light->SetPosition(stadiumLightPositions[i]);
+    light->SetRadius(1000000.0f);
+    GetScene3D()->AddObject(light);
+    stadiumLights.push_back(light);
+  }
   SetRandomSunParams();
 
 
@@ -670,6 +695,7 @@ void Match::Exit() {
   scene3D->DeleteNode(GetDynamicNode());
   scene3D->DeleteNode(stadiumNode);
   scene3D->DeleteNode(goalsNode);
+  scene3D->DeleteNode(stadiumFloodlightNode);
 
   scene3D->DeleteObject(crowd01);
   scene3D->DeleteObject(crowd02);
@@ -716,42 +742,46 @@ void Match::SetRandomSunParams() {
   if (Verbose()) printf("setting random sun params\n");
 
   const std::string lightingMode = GetConfiguration()->Get("match_lighting", "random");
-  float brightness = 1.0f;
-
-  Vector3 sunPos = Vector3(-1.2f, 0.4f, 1.0f); // sane default
-  float averageHeightMultiplier = 1.3f;
-  if (lightingMode == "day") {
-    sunPos = Vector3(-1.2f, 0.4f, 1.0f);
-  } else if (lightingMode == "night") {
-    sunPos = Vector3(-0.7f, 0.8f, 0.25f);
-    brightness = 0.35f;
-  } else {
-    sunPos = Vector3(clamp(random(-1.7f, 1.7f), -1.0, 1.0), clamp(random(-1.7f, 1.7f), -1.0, 1.0), averageHeightMultiplier);
+  std::string resolvedMode = lightingMode;
+  if (lightingMode == "random") {
+    const char *profiles[] = { "day", "day", "sunset", "cloudy", "night" };
+    const int profileIndex = clamp(static_cast<int>(random(0, 5)), 0, 4);
+    resolvedMode = profiles[profileIndex];
   }
+  GetConfiguration()->Set("match_lighting_resolved", resolvedMode);
+
+  const EnvironmentProfile profile = GetEnvironmentProfile(*GetConfiguration());
+  Vector3 sunPos = profile.sunPosition;
   sunPos.Normalize();
-  if (random(0, 1) > 0.5f && sunPos.coords[1] > 0.25f) sunPos.coords[1] = -sunPos.coords[1]; // sun more often on (default) camera side (coming from front == clearer lighting on players)
+  if (lightingMode == "random" && random(0, 1) > 0.5f && sunPos.coords[1] > 0.25f)
+    sunPos.coords[1] = -sunPos.coords[1];
   sunNode->GetObject("sun")->SetPosition(sunPos * 10000.0f);
 
   float defaultRadius = 1000000.0f;
   float sunRadius = defaultRadius;
-  static_pointer_cast<Light>(sunNode->GetObject("sun"))->SetRadius(sunRadius);
+  boost::intrusive_ptr<Light> sunLight = static_pointer_cast<Light>(sunNode->GetObject("sun"));
+  sunLight->SetRadius(sunRadius);
+  const bool isNight = resolvedMode == "night";
+  // At night, two opposed floodlight banks own the shadow maps. This creates
+  // the short, crossed player shadows of a televised match without paying for
+  // four additional 2048x2048 shadow maps.
+  sunLight->SetShadow(resolvedMode != "cloudy" && !isNight);
+  sunLight->SetColor(profile.sunColor);
 
-  Vector3 sunColorNoon(0.9, 0.8, 1.0); sunColorNoon *= 1.4f;
-  Vector3 sunColorDusk(1.4, 0.9, 0.7); sunColorDusk *= 1.2f;
+  const Vector3 floodlightColor = profile.stadiumLightColor * profile.stadiumLightIntensity;
+  for (unsigned int i = 0; i < stadiumLights.size(); ++i) {
+    const bool shadowBank = isNight && (i == 0 || i == 3);
+    stadiumLights[i]->SetShadow(shadowBank);
+    // Keep total pitch exposure nearly unchanged, but let the shadow-casting
+    // banks dominate so their crossed shadows are not erased by flat fill.
+    const float bankIntensity = isNight ? (shadowBank ? 1.35f : 0.55f) : 1.0f;
+    stadiumLights[i]->SetColor(floodlightColor * bankIntensity);
+  }
+  if (stadiumFloodlightNode) {
+    stadiumFloodlightNode->SetPosition(isNight ? Vector3(0.0f) : Vector3(0.0f, 0.0f, -1000.0f));
+  }
 
-  float noonBias = pow(NormalizedClamp(sunPos.coords[2], 0.5f, 1.0f), 1.2f);
-  Vector3 sunColor = sunColorNoon * noonBias + sunColorDusk * (1.0f - noonBias);
-
-  Vector3 randomAddition = lightingMode == "random"
-    ? Vector3(random(-0.1, 0.1), random(-0.1, 0.1), random(-0.1, 0.1))
-    : Vector3(0, 0, 0);
-  randomAddition *= 1.2f;
-  sunColor += randomAddition;
-
-  if (Verbose()) printf("sunlight noonbias: %f, random addition: ", noonBias);
-  if (Verbose()) randomAddition.Print();
-
-  static_pointer_cast<Light>(sunNode->GetObject("sun"))->SetColor(sunColor * brightness);
+  if (Verbose()) printf("environment profile: %s\n", resolvedMode.c_str());
 }
 
 void Match::RandomizeAdboards(boost::intrusive_ptr<Node> stadiumNode) {

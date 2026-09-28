@@ -1,0 +1,3 @@
+{"frame":1,"timestamp_ms":620,"match_time_ms":0,"camera_type":"LOW_TOUCHLINE","camera_id":1,"position":[0,7.53116,48.3384],"rotation_xyzw":[0.146127,-0.0488058,-0.313011,0.937171],"fov_degrees":39.795}
+{"frame":2,"timestamp_ms":660,"match_time_ms":0,"camera_type":"LOW_TOUCHLINE","camera_id":1,"position":[0,8.48044,46.8685],"rotation_xyzw":[0.162004,-0.0615448,-0.349759,0.920671],"fov_degrees":39.7693}
+{"frame":3,"timestamp_ms":700,"match_time_ms":0,"camera_type":"LOW_TOUCHLINE","camera_id":1,"position":[0,9.46836,45.3388],"rotation_xyzw":[0.177587,-0.0762213,-0.386977,0.901611],"fov_degrees":39.7425}
