@@ -527,7 +527,7 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
         continue;
       }
 
-      // todo: add light types SetUniformInt("lighting", "lightType", (int)light.type);
+      SetUniformInt(currentShader->first, "lightType", light.type);
 
       // bind shadow map
       SetUniformInt(currentShader->first, "has_shadow", (int)light.hasShadow);
@@ -547,10 +547,9 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
       SetUniformFloat3(currentShader->first, "lightPosition", light.position.coords[0], light.position.coords[1], light.position.coords[2]);
 
       int quad_or_sphere = 1;
-      if (light.type == 0) {
+      if (light.type == 0 || light.type == 2) {
 
-      quad_or_sphere = 0;  // directional light: visible anyway, everywhere.
-                           // draw fullscreen quad
+      quad_or_sphere = 0;  // directional and spot lights use a fullscreen pass.
 
       } else if (light.type == 1) { // sphere
         AABB aabb = light.aabb;

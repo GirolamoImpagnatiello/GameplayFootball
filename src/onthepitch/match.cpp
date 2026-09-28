@@ -454,20 +454,20 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   GetScene3D()->AddNode(stadiumFloodlightNode);
 
   const Vector3 stadiumLightPositions[] = {
-    Vector3(-0.85f, -0.55f, 0.75f) * 10000.0f,
-    Vector3(-0.85f, 0.55f, 0.75f) * 10000.0f,
-    Vector3(0.85f, -0.55f, 0.75f) * 10000.0f,
-    Vector3(0.85f, 0.55f, 0.75f) * 10000.0f
+    Vector3(-54.0f, -39.0f, 45.0f),
+    Vector3(-54.0f, 39.0f, 45.0f),
+    Vector3(54.0f, -39.0f, 45.0f),
+    Vector3(54.0f, 39.0f, 45.0f)
   };
   for (unsigned int i = 0; i < sizeof(stadiumLightPositions) / sizeof(stadiumLightPositions[0]); ++i) {
     boost::intrusive_ptr<Light> light = static_pointer_cast<Light>(
       ObjectFactory::GetInstance().CreateObject("stadium floodlight #" + int_to_str(i), e_ObjectType_Light));
     GetScene3D()->CreateSystemObjects(light);
     light->SetShadow(false);
-    light->SetType(e_LightType_Directional);
+    light->SetType(e_LightType_Spot);
     light->SetPosition(stadiumLightPositions[i]);
-    light->SetRadius(1000000.0f);
-    GetScene3D()->AddObject(light);
+    light->SetRadius(160.0f);
+    stadiumFloodlightNode->AddObject(light);
     stadiumLights.push_back(light);
   }
   SetRandomSunParams();
@@ -697,6 +697,10 @@ void Match::Exit() {
   scene3D->DeleteNode(goalsNode);
   scene3D->DeleteNode(stadiumFloodlightNode);
 
+  // DeleteNode(stadiumFloodlightNode) owns and unloads the four lights and all
+  // their per-camera shadow maps. Drop our remaining references as well.
+  stadiumLights.clear();
+
   scene3D->DeleteObject(crowd01);
   scene3D->DeleteObject(crowd02);
 
@@ -762,6 +766,10 @@ void Match::SetRandomSunParams() {
   boost::intrusive_ptr<Light> sunLight = static_pointer_cast<Light>(sunNode->GetObject("sun"));
   sunLight->SetRadius(sunRadius);
   const bool isNight = resolvedMode == "night";
+  const std::string nightLightingQuality = GetConfiguration()->Get("night_lighting_quality", "balanced");
+  unsigned int shadowedFloodlightCount = 2;
+  if (nightLightingQuality == "performance") shadowedFloodlightCount = 1;
+  if (nightLightingQuality == "quality") shadowedFloodlightCount = 4;
   // At night, two opposed floodlight banks own the shadow maps. This creates
   // the short, crossed player shadows of a televised match without paying for
   // four additional 2048x2048 shadow maps.
@@ -770,7 +778,11 @@ void Match::SetRandomSunParams() {
 
   const Vector3 floodlightColor = profile.stadiumLightColor * profile.stadiumLightIntensity;
   for (unsigned int i = 0; i < stadiumLights.size(); ++i) {
-    const bool shadowBank = isNight && (i == 0 || i == 3);
+    const bool opposingBalancedBank = i == 0 || i == 3;
+    const bool shadowBank = isNight && (
+      shadowedFloodlightCount == 4 ||
+      (shadowedFloodlightCount == 2 && opposingBalancedBank) ||
+      (shadowedFloodlightCount == 1 && i == 0));
     stadiumLights[i]->SetShadow(shadowBank);
     // Keep total pitch exposure nearly unchanged, but let the shadow-casting
     // banks dominate so their crossed shadows are not erased by flat fill.

@@ -82,14 +82,14 @@ namespace blunted {
       profile.fogColor = Vector3(0.055f, 0.075f, 0.12f);
       profile.skyColor = Vector3(0.018f, 0.028f, 0.065f);
       profile.stadiumLightColor = Vector3(0.92f, 0.96f, 1.0f);
-      profile.ambientBrightness = 0.045f;
+      profile.ambientBrightness = 0.035f;
       profile.ambientDesaturation = 0.28f;
-      profile.pitchAmbientScale = 0.30f;
+      profile.pitchAmbientScale = 0.28f;
       profile.fogDensity = 0.55f;
       profile.postBrightness = 1.08f;
       profile.postContrast = 0.27f;
       profile.postSaturation = 0.96f;
-      profile.stadiumLightIntensity = 0.34f;
+      profile.stadiumLightIntensity = 0.40f;
     }
 
     return profile;

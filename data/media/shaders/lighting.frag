@@ -26,6 +26,7 @@ uniform vec3 cameraPosition;
 uniform vec3 lightPosition;
 uniform vec3 lightColor;
 uniform float lightRadius;
+uniform int lightType; // 0 directional, 1 point, 2 stadium spot
 
 out vec4 stdout0;
 out vec4 stdout1;
@@ -80,6 +81,18 @@ void main(void) {
   float falloff = max(0.0, lightRadius - dist) / lightRadius;
   // exp
   falloff = falloff * falloff;
+
+  if (lightType == 2) {
+    // Stadium banks are aimed at the centre spot. A broad, feathered cone
+    // keeps the whole pitch covered while allowing the corners/perimeter to
+    // fall off naturally. This replaces the old uniform directional fill.
+    vec3 spotAxis = normalize(-lightPosition);
+    vec3 lightToFragment = normalize(worldPosition.xyz - lightPosition);
+    float cone = smoothstep(0.46f, 0.80f, dot(lightToFragment, spotAxis));
+    float normalizedDistance = clamp(dist / lightRadius, 0.0f, 1.0f);
+    float stadiumAttenuation = 1.0f / (1.0f + 0.38f * normalizedDistance * normalizedDistance);
+    falloff = cone * stadiumAttenuation;
+  }
   // (above calculation is highly incorrect but gives a nice mix between exp and linear. see
   // http://tomdalling.com/blog/modern-opengl/07-more-lighting-ambient-specular-attenuation-gamma/ for more info about the correct methods
   // (basically: "1.0 / (1.0 + x ^ 2)" )

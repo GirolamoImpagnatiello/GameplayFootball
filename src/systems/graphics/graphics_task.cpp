@@ -328,6 +328,18 @@ namespace blunted {
       plane.Set(Vector3(60, 0, 0), Vector3(-1, 0, 0.3).GetNormalized());
       bounding.push_back(plane);
       boost::static_pointer_cast<Scene3D>(scene)->GetObjects<Geometry>(e_ObjectType_Geometry, visibleGeometry, bounding);
+      if (light->GetType() == e_LightType_Spot) {
+        // Night floodlights should cast player/ball/goal shadows, not project
+        // enormous roof and stand silhouettes across the entire pitch.
+        std::deque < boost::intrusive_ptr<Geometry> >::iterator geometryIter = visibleGeometry.begin();
+        while (geometryIter != visibleGeometry.end()) {
+          if ((*geometryIter)->GetName().find("stadium") != std::string::npos) {
+            geometryIter = visibleGeometry.erase(geometryIter);
+          } else {
+            ++geometryIter;
+          }
+        }
+      }
       //boost::static_pointer_cast<Scene3D>(scene)->GetObjects<Geometry>(e_ObjectType_Geometry, visibleGeometry);
       light->EnqueueShadowMap(camera, visibleGeometry);
     }

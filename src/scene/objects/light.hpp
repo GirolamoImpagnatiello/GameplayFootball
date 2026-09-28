@@ -19,7 +19,8 @@ namespace blunted {
 
   enum e_LightType {
     e_LightType_Directional,
-    e_LightType_Point
+    e_LightType_Point,
+    e_LightType_Spot
   };
 
   class Light : public Object {

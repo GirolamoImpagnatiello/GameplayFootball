@@ -145,7 +145,7 @@ namespace blunted {
 
       // todo: less locking
       entry.position = (*visibleLightIter)->GetDerivedPosition();
-      entry.type = (*visibleLightIter)->GetType() == e_LightType_Directional ? 0 : 1;
+      entry.type = static_cast<int>((*visibleLightIter)->GetType());
       entry.shadow = (*visibleLightIter)->GetShadow();
       entry.color = (*visibleLightIter)->GetColor();
       entry.radius = (*visibleLightIter)->GetRadius();

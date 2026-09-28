@@ -101,7 +101,7 @@ namespace blunted {
     Matrix4 lightViewMatrix;
     boost::intrusive_ptr < Resource<Texture> > shadowMapTexture;
     Vector3 position;
-    int type; // 0 == directional, 1 == point
+    int type; // 0 == directional, 1 == point, 2 == spot
     Vector3 color;
     float radius;
     bool shadow;
