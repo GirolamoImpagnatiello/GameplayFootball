@@ -92,7 +92,8 @@ void Team::InitPlayers(boost::intrusive_ptr<Node> fullbodyNode, std::map<Vector3
         kitFilename = GetTeamData()->GetKitUrl() + "_kit_0" + int_to_str(GetMenuTask()->GetTeamKitNum(GetID())) + ".png";
         if (!boost::filesystem::exists(kitFilename)) kitFilename = (GetID() == 0) ? "media/textures/almost_white.png" : "media/textures/almost_black.png";
       } else {
-        kitFilename = "media/objects/players/textures/goalie_kit.png";
+        kitFilename = GetTeamData()->GetKitUrl() + "_goalkeeper_kit_0" + int_to_str(GetMenuTask()->GetTeamGoalkeeperKitNum(GetID())) + ".png";
+        if (!boost::filesystem::exists(kitFilename)) kitFilename = "media/objects/players/textures/goalie_kit.png";
       }
       kit = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(kitFilename);
       player->Activate(playerNode, fullbodyNode, colorCoords, kit, match->GetAnimCollection());
@@ -593,13 +594,20 @@ void Team::SetKitNumber(int num) {
   if (kitNumberString.size() < 2) kitNumberString = "0" + kitNumberString;
   std::string kitFilename = GetTeamData()->GetKitUrl() + "_kit_" + kitNumberString + ".png";
   if (!boost::filesystem::exists(kitFilename)) kitFilename = GetID() == 0 ? "media/textures/white.png" : "media/textures/black.png";
+  std::string goalkeeperKitFilename = GetTeamData()->GetKitUrl() + "_goalkeeper_kit_" + kitNumberString + ".png";
+  if (!boost::filesystem::exists(goalkeeperKitFilename)) goalkeeperKitFilename = "media/objects/players/textures/goalie_kit.png";
 
   // new kits on the block!
   boost::intrusive_ptr < Resource<Surface> > newKit = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(kitFilename);
+  boost::intrusive_ptr < Resource<Surface> > newGoalkeeperKit = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(goalkeeperKitFilename);
 
   for (unsigned int i = 0; i < players.size(); i++) {
     if (players.at(i)->IsActive()) {
-      if (players.at(i)->GetFormationEntry().role != e_PlayerRole_GK) players.at(i)->SetKit(newKit);
+      if (players.at(i)->GetFormationEntry().role == e_PlayerRole_GK) {
+        players.at(i)->SetKit(newGoalkeeperKit);
+      } else {
+        players.at(i)->SetKit(newKit);
+      }
     }
   }
 

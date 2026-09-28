@@ -297,6 +297,12 @@ player appearance and lighting). `match_lighting` accepts `random`, `day`, or
 `night`; the latter two disable lighting variation so generated captures are
 consistent.
 
+Development builds always load and save the single canonical configuration at
+`data/football.config`, resolving it from the executable location rather than
+the process working directory. A path passed as the first command-line argument
+still overrides this behavior. Packaged builds that do not contain the source
+tree fall back to `football.config` next to the executable.
+
 `ai_offensive_aggression` controls how readily AI teams attempt progressive
 passes and assists. `1.0` is the conservative baseline; values around `1.25` to
 `1.5` encourage vertical play. Shot selection is controlled separately by

@@ -33,6 +33,7 @@
 #include "utils/orbitcamera.hpp"
 
 #include "SDL2/SDL_ttf.h"
+#include "SDL2/SDL_filesystem.h"
 
 #include <chrono>
 
@@ -96,6 +97,36 @@ e_DebugMode debugMode = e_DebugMode_Off;
 std::string activeSaveDirectory;
 
 std::string configFile = "football.config";
+
+static std::string ResolveDefaultConfigFilename() {
+  char *basePath = SDL_GetBasePath();
+  if (basePath) {
+    const boost::filesystem::path executableDirectory(basePath);
+    SDL_free(basePath);
+
+    // Development builds live in out/<build directory>. Keep the editable
+    // source configuration as the single canonical file, so loading and
+    // saving settings can never target different build-local copies.
+    const boost::filesystem::path sourceConfig =
+      executableDirectory / ".." / ".." / "data" / "football.config";
+    if (boost::filesystem::exists(sourceConfig)) {
+      return boost::filesystem::canonical(sourceConfig).string();
+    }
+
+    // Standalone/package fallback: use the configuration next to the binary.
+    const boost::filesystem::path packagedConfig = executableDirectory / "football.config";
+    if (boost::filesystem::exists(packagedConfig)) {
+      return boost::filesystem::canonical(packagedConfig).string();
+    }
+  }
+
+  const boost::filesystem::path sourceConfig("data/football.config");
+  if (boost::filesystem::exists(sourceConfig)) {
+    return boost::filesystem::canonical(sourceConfig).string();
+  }
+  return "football.config";
+}
+
 std::string GetConfigFilename() {
   return configFile;
 }
@@ -283,6 +314,7 @@ int main(int argc, char **argv) {
 
   config = new Properties();
   if (argc > 1) configFile = argv[1];
+  else configFile = ResolveDefaultConfigFilename();
   config->LoadFile(configFile.c_str());
 
   Initialize(*config);

@@ -136,7 +136,9 @@ if(WIN32)
    add_custom_command(TARGET gameplayfootball POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_directory
          "${PROJECT_SOURCE_DIR}/data"
-         "$<TARGET_FILE_DIR:gameplayfootball>")
+         "$<TARGET_FILE_DIR:gameplayfootball>"
+      COMMAND ${CMAKE_COMMAND} -E rm -f
+         "$<TARGET_FILE_DIR:gameplayfootball>/football.config")
 
    if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
       set(_VCPKG_RUNTIME_BIN "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")

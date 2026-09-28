@@ -22,7 +22,126 @@
 #include "framework/scheduler.hpp"
 #include "managers/resourcemanagerpool.hpp"
 
+#include <cmath>
+#include <limits>
+#include <map>
+#include <sstream>
+
 using namespace blunted;
+
+namespace {
+
+struct KitColorSignature {
+  KitColorSignature() : valid(false) {}
+  std::vector<float> values;
+  bool valid;
+};
+
+struct KitSignatures {
+  KitColorSignature outfield;
+  KitColorSignature goalkeeper;
+};
+
+struct KitSelection {
+  KitSelection() : homeOutfield(1), awayOutfield(2), homeGoalkeeper(1), awayGoalkeeper(2) {}
+  int homeOutfield;
+  int awayOutfield;
+  int homeGoalkeeper;
+  int awayGoalkeeper;
+};
+
+KitColorSignature ParseKitColorSignature(const std::string &text) {
+  KitColorSignature signature;
+  std::stringstream stream(text);
+  std::string value;
+  while (std::getline(stream, value, ',')) {
+    signature.values.push_back(static_cast<float>(atof(value.c_str())));
+  }
+  signature.valid = signature.values.size() == 8;
+  return signature;
+}
+
+float SignatureDistance(const KitColorSignature &a, const KitColorSignature &b) {
+  if (!a.valid || !b.valid) return 0.0f;
+  float histogramDistance = 0.0f;
+  for (unsigned int i = 0; i < 7; ++i) histogramDistance += std::fabs(a.values.at(i) - b.values.at(i));
+  histogramDistance *= 0.5f;
+  const float luminanceDistance = std::fabs(a.values.at(7) - b.values.at(7));
+  return histogramDistance * 0.85f + luminanceDistance * 0.15f;
+}
+
+KitSelection ChooseNonClashingKits(const std::string &homeTeamID, const std::string &awayTeamID) {
+  const int homeID = atoi(homeTeamID.c_str());
+  const int awayID = atoi(awayTeamID.c_str());
+  DatabaseResult *tableResult = GetDB()->Query("select name from sqlite_master where type = 'table' and name = 'team_kits'");
+  const bool hasSignatureTable = !tableResult->data.empty();
+  delete tableResult;
+  if (!hasSignatureTable) return KitSelection();
+  std::map<int, std::map<int, KitSignatures> > signatures;
+  DatabaseResult *result = GetDB()->Query(
+      "select team_id, kit_number, outfield_signature, goalkeeper_signature from team_kits where team_id in (" +
+      int_to_str(homeID) + ", " + int_to_str(awayID) + ") order by team_id, kit_number");
+  for (unsigned int row = 0; row < result->data.size(); ++row) {
+    if (result->data.at(row).size() < 4) continue;
+    const int teamID = atoi(result->data.at(row).at(0).c_str());
+    const int kitNumber = atoi(result->data.at(row).at(1).c_str());
+    signatures[teamID][kitNumber].outfield = ParseKitColorSignature(result->data.at(row).at(2));
+    signatures[teamID][kitNumber].goalkeeper = ParseKitColorSignature(result->data.at(row).at(3));
+  }
+  delete result;
+
+  if (signatures[homeID].size() < 2 || signatures[awayID].size() < 2) return KitSelection();
+
+  float bestScore = -std::numeric_limits<float>::max();
+  bool bestMeetsContrastThresholds = false;
+  KitSelection bestKits;
+  for (int homeKit = 1; homeKit <= 2; ++homeKit) {
+    for (int awayKit = 1; awayKit <= 2; ++awayKit) {
+      const KitSignatures &home = signatures[homeID][homeKit];
+      const KitSignatures &away = signatures[awayID][awayKit];
+      const float outfieldDistance = SignatureDistance(home.outfield, away.outfield);
+      for (int homeGoalkeeperKit = 1; homeGoalkeeperKit <= 2; ++homeGoalkeeperKit) {
+        for (int awayGoalkeeperKit = 1; awayGoalkeeperKit <= 2; ++awayGoalkeeperKit) {
+          const KitColorSignature &homeGoalkeeper = signatures[homeID][homeGoalkeeperKit].goalkeeper;
+          const KitColorSignature &awayGoalkeeper = signatures[awayID][awayGoalkeeperKit].goalkeeper;
+          const float homeGoalkeeperOpponentDistance = SignatureDistance(homeGoalkeeper, away.outfield);
+          const float awayGoalkeeperOpponentDistance = SignatureDistance(awayGoalkeeper, home.outfield);
+          const float opponentSafety = std::min(homeGoalkeeperOpponentDistance, awayGoalkeeperOpponentDistance);
+          const float homeGoalkeeperOwnDistance = SignatureDistance(homeGoalkeeper, home.outfield);
+          const float awayGoalkeeperOwnDistance = SignatureDistance(awayGoalkeeper, away.outfield);
+          const float ownTeamSafety = std::min(homeGoalkeeperOwnDistance, awayGoalkeeperOwnDistance);
+          const float goalkeeperDistance = SignatureDistance(homeGoalkeeper, awayGoalkeeper);
+
+          // A valid combination must keep the two teams apart and make each
+          // goalkeeper clearly different from both teams' outfield players.
+          const bool meetsContrastThresholds =
+              outfieldDistance >= 0.25f && opponentSafety >= 0.15f && ownTeamSafety >= 0.15f;
+          float score = outfieldDistance + opponentSafety * 0.50f +
+                        ownTeamSafety * 0.15f + goalkeeperDistance * 0.10f;
+          if (homeKit == 1) score += 0.08f;  // preserve the home strip when contrast is comparable
+          if (awayKit == 1) score += 0.02f;
+          if (!meetsContrastThresholds) {
+            score -= std::max(0.0f, 0.25f - outfieldDistance) * 3.0f;
+            score -= std::max(0.0f, 0.15f - opponentSafety) * 4.0f;
+            score -= std::max(0.0f, 0.15f - ownTeamSafety) * 2.0f;
+          }
+          if ((meetsContrastThresholds && !bestMeetsContrastThresholds) ||
+              (meetsContrastThresholds == bestMeetsContrastThresholds && score > bestScore)) {
+            bestMeetsContrastThresholds = meetsContrastThresholds;
+            bestScore = score;
+            bestKits.homeOutfield = homeKit;
+            bestKits.awayOutfield = awayKit;
+            bestKits.homeGoalkeeper = homeGoalkeeperKit;
+            bestKits.awayGoalkeeper = awayGoalkeeperKit;
+          }
+        }
+      }
+    }
+  }
+  return bestKits;
+}
+
+}  // namespace
 
 void SetActiveController(int side, bool keyboard) {
   bool keyboardActive = true;
@@ -108,6 +227,8 @@ MenuTask::MenuTask(float aspectRatio, float margin, TTF_Font *defaultFont, TTF_F
 
     queuedFixture->team1KitNum = 1;
     queuedFixture->team2KitNum = 2;
+    queuedFixture->team1GoalkeeperKitNum = 1;
+    queuedFixture->team2GoalkeeperKitNum = 2;
 
     menuAction = e_MenuAction_Menu;
 
@@ -136,8 +257,11 @@ MenuTask::MenuTask(float aspectRatio, float margin, TTF_Font *defaultFont, TTF_F
     // 8 == real madrid
     queuedFixture->teamID1 = "3";
     queuedFixture->teamID2 = "8";
-    queuedFixture->team1KitNum = 2;
-    queuedFixture->team2KitNum = 2;
+    const KitSelection kits = ChooseNonClashingKits(queuedFixture->teamID1, queuedFixture->teamID2);
+    queuedFixture->team1KitNum = kits.homeOutfield;
+    queuedFixture->team2KitNum = kits.awayOutfield;
+    queuedFixture->team1GoalkeeperKitNum = kits.homeGoalkeeper;
+    queuedFixture->team2GoalkeeperKitNum = kits.awayGoalkeeper;
 
     menuAction = e_MenuAction_Menu;
 
@@ -151,6 +275,23 @@ MenuTask::~MenuTask() {
   delete windowManager->GetPageFactory();
 
   if (Verbose()) printf("done\n");
+}
+
+void MenuTask::SetTeamIDs(const std::string &id1, const std::string &id2) {
+  const KitSelection kits = ChooseNonClashingKits(id1, id2);
+  queuedFixture.Lock();
+  queuedFixture->teamID1 = id1;
+  queuedFixture->teamID2 = id2;
+  queuedFixture->team1KitNum = kits.homeOutfield;
+  queuedFixture->team2KitNum = kits.awayOutfield;
+  queuedFixture->team1GoalkeeperKitNum = kits.homeGoalkeeper;
+  queuedFixture->team2GoalkeeperKitNum = kits.awayGoalkeeper;
+  queuedFixture.Unlock();
+  if (Verbose()) {
+    printf("kit clash detection: team %s kit %i/gk %i vs team %s kit %i/gk %i\n",
+           id1.c_str(), kits.homeOutfield, kits.homeGoalkeeper,
+           id2.c_str(), kits.awayOutfield, kits.awayGoalkeeper);
+  }
 }
 
 void MenuTask::ProcessPhase() {
@@ -266,12 +407,18 @@ void MenuTask::ConfigureAutomaticFixture() {
     }
   }
 
-  queuedFixture.Lock();
-  queuedFixture->teamID1 = homeTeamID;
-  queuedFixture->teamID2 = awayTeamID;
-  queuedFixture->team1KitNum = GetConfiguration()->GetInt("automatic_home_kit", 2);
-  queuedFixture->team2KitNum = GetConfiguration()->GetInt("automatic_away_kit", 2);
-  queuedFixture.Unlock();
+  if (GetConfiguration()->GetBool("automatic_kit_clash_detection", true)) {
+    SetTeamIDs(homeTeamID, awayTeamID);
+  } else {
+    queuedFixture.Lock();
+    queuedFixture->teamID1 = homeTeamID;
+    queuedFixture->teamID2 = awayTeamID;
+    queuedFixture->team1KitNum = GetConfiguration()->GetInt("automatic_home_kit", 2);
+    queuedFixture->team2KitNum = GetConfiguration()->GetInt("automatic_away_kit", 2);
+    queuedFixture->team1GoalkeeperKitNum = queuedFixture->team1KitNum;
+    queuedFixture->team2GoalkeeperKitNum = queuedFixture->team2KitNum;
+    queuedFixture.Unlock();
+  }
 }
 
 void MenuTask::CompleteAutomaticMatch() {
