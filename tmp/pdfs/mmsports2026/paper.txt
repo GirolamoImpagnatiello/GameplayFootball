@@ -1,0 +1,685 @@
+
+===== PAGE 1 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       World   Models  as Data  Engines: Annotation-Preserving     Synthetic        
+    1                                                                           59  
+    2                                                                           60  
+                    Video for Soccer  Athlete Re-Identification                     
+    3                                                                           61  
+    4                                                                           62  
+                                   AnonymousAuthor(s)                               
+    5                                                                           63  
+    6                                                                           64  
+    7                                                                           65  
+    8                                                                           66  
+    9                                                                           67  
+    10                                                                          68  
+    11                                                                          69  
+    12                                                                          70  
+    13                                                                          71  
+    14                                                                          72  
+    15                                                                          73  
+    16                                                                          74  
+    17                                                                          75  
+    18                                                                          76  
+    19                                                                          77  
+    20                                                                          78  
+    21                                                                          79  
+    22                                                                          80  
+    23                                                                          81  
+       Figure1:Onelabeledclip,manylabeledvariants.Ourpipelinere-rendersareal,annotatedsoccerclipundernewlighting
+    24                                                                          82  
+       conditionsandjerseycolorswithasoccer-specializedworldfoundationmodel.Becausegenerationisconditionedonspatial
+    25                                                                          83  
+       structureextractedfromthesource,theoriginalboundingboxesandtrackidentitiescarryovertoeveryvariantwithoutany
+    26                                                                          84  
+       newmanualannotation.                                                         
+    27                                                                          85  
+    28 Abstract                             training–withevaluationonreal,held-outSportsMOTdataonly 86
+    29                                                                              
+       Re-identifyingathletesacrossframesandcamerasunderpinsplayer                  
+                                            acrosstwodifferentarchitectures–improvesmAPby7.60±1.90and 87
+    30                                                                              
+       trackingandgame-statereconstructioninsoccer,yettrainingro-                   
+                                            rank-1accuracyby7.85±1.75percentagepointsoverareal-only 88
+    31 bustre-identification(ReID)modelsrequireslargevolumesofsuper- baseline,withjointaugmentationoutperformingsynthetic-only 89
+    32 visedidentity-labeledfootagethatarecostlyandslowtoannotate. pre-training. 90 
+    33                                                                          91  
+       Syntheticdataisanattractiveremedy,butgame-enginerenders                      
+    34                                      CCSConcepts                         92  
+       exhibitawideappearancegaptobroadcastvideo,whilephotore-                      
+    35                                                                          93  
+       alisticgenerativemodelsproduceframeswhoseplayerboxesand •Computingmethodologies→Objectidentification;Tracking;
+    36                                                                          94  
+       identitiesmustbere-annotatedfromscratch.Weshowthataworld Neuralnetworks;Computervision.
+    37                                                                          95  
+       foundationmodelcanactasanannotation-preservingdataengine:                    
+    38                                      ACMReferenceFormat:                 96  
+       becausegenerationisconditionedonspatialstructurealignedwith                  
+    39                                      AnonymousAuthor(s).2026.WorldModelsasDataEngines:Annotation- 97
+       asourceclip,thesource’sboundingboxesandtrackidentitiesre-                    
+    40                                      PreservingSyntheticVideoforSoccerAthleteRe-Identification.InPro- 98
+       mainapproximatelyvalidonthegeneratedvideo.Wefirstdomain- ceedingsof9thInternationalACMWorkshoponMultimediaContentAnal-
+    41                                                                          99  
+       specializeNVIDIACosmos3tosoccerbroadcastviaLoRA-based ysisinSports(MMSports’26).ACM,NewYork,NY,USA,8pages.https:
+    42                                                                          100 
+       supervisedfine-tuningonclipsfromtheSoccerNetGameState //doi.org/XXXXXXX.XXXXXXX
+    43                                                                          101 
+       Reconstructiondataset,promptedwithstructuredcaptionsfrom                     
+    44                                                                          102 
+       Qwen3-VL.Wethenapplymulti-controlvideo-to-videotransfer 1 Introduction       
+    45                                                                          103 
+       (edge,depth,segmentation)toSportsMOTsoccerclips,re-rendering                 
+    46                                      Player identity is the connective tissue of soccer video under- 104
+       eachunderdiverselightingconditionsandjerseycolorswhilepre-                   
+    47                                      standing. Multi-object tracking, game-state reconstruction and 105
+       servingplayerlayout.MergingthegeneratedvariantsintoReID                      
+    48                                      downstreamanalyticsalldependonassociatingplayerdetections 106
+    49                                      acrossframes,occlusions,andcameracuts,andthisassociation 107
+       Permissiontomakedigitalorhardcopiesofallorpartofthisworkforpersonalor        
+    50                                      isdrivenlargelybyappearance-basedre-identification(ReID)fea- 108
+       classroomuseisgrantedwithoutfeeprovidedthatcopiesarenotmadeordistributed     
+    51 forprofitorcommercialadvantageandthatcopiesbearthisnoticeandthefullcitation tures[6,8,33].SportsfootagemakesReIDunusuallyhard:team- 109
+    52 onthefirstpage.Copyrightsforcomponentsofthisworkownedbyothersthanthe mateswearnearlyidenticaluniforms,playersaresmallandmotion- 110
+       author(s)mustbehonored.Abstractingwithcreditispermitted.Tocopyotherwise,or   
+    53                                      blurredinwidebroadcastviews,andthemostdiscriminativecue 111
+       republish,topostonserversortoredistributetolists,requirespriorspecificpermission
+    54 and/orafee.Requestpermissionsfrompermissions@acm.org. (thatis,thejerseynumber)isoftenillegible[2,5,19,22]. 112
+    55 MMSports’26,RiodeJaneiro,Brazil       Progressontheseproblemsiscurrentlyboundedbydata.Identity 113
+       ©2026Copyrightheldbytheowner/author(s).PublicationrightslicensedtoACM.       
+    56                                      supervisionrequiresframe-accurateboundingboxeswithconsis- 114
+       ACMISBN978-1-4503-XXXX-X/2018/06                                             
+    57 https://doi.org/XXXXXXX.XXXXXXX      tenttrackidentities,anannotationeffortthatisslow,expensive, 115
+    58                                    1                                     116 
+===== PAGE 2 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       MMSports’26,Novemberxx,2026,RiodeJaneiro,Brazil                    Anon.     
+                                                                                    
+    117 andconstrainedbybroadcastrights.Asaresult,publicsportsReID usingSoccerNet-GSRandVLM-generatedstructuredcap- 175
+    118 corporaremainordersofmagnitudesmallerandlessdiversethan tions;multi-controltransferthensynthesizeslightingand 176
+    119 genericperson-ReIDbenchmarks[43],andmodelstrainedonthem team-leveljerseydiversityonSportsMOTwithedge,depth, 177
+    120 inheritthenarrowrangeofstadiums,kits,lightingandweather andsegmentationguidance. 178
+    121 thathappenedtoberecorded.              • Areproduciblerecipe.Prompttemplates,controlextrac- 179
+    122  Syntheticdataisthenaturalremedy,butexistingroutestrade tionandfine-tuningconfigurationaresetdeterministically 180
+    123 oneproblemforanother.Game-enginepipelinessuchasPersonX, andseededforreproducibility. 181
+    124 RandPerson,UnrealPerson,andClonedPersongeneratelabelsfor                182 
+    125 free [34, 36, 37, 40], and engine-rendered soccer data exists for       183 
+    126 playerdetection[28],yetrenderedfootageexhibitsawideappear- 2 RelatedWork 184
+    127 ancegaptorealbroadcastvideo.Generativemodelsaimatclosing                185 
+                                            2.1 PersonandAthleteRe-Identification   
+    128 therealismgap:GAN-basedaugmentationrestylesorsynthesizes                186 
+    129 personimages[44,45]anddiffusionmodelsdiversifyposeand PersonReIDhasprogressedfrombenchmark-drivenfeaturelearn- 187
+    130 appearance[17,23].Yet,theyoperateattheimageorcroplevel, ingondatasetssuchasMarket-1501[43]throughpurpose-builtar- 188
+    131 meaning that nothing guarantees that a generated video frame chitectureslikeOSNet[46]andtransformer-basedTransReID[13], 189
+    132 stillmatchesthesource’splayerboxesandtrackidentities,hence withtrainingrecipesconsolidatedbystrong-baselinestudies[14, 190
+    133 scalingthemtovideoReIDwoulddemandre-annotationofevery 21].Sportssettingsbreakmanyoftheassumptionsthesemodels 191
+    134 generatedclip.                      inherit:appearanceisdominatedbyteamuniformsratherthanindi- 192
+    135  Wearguethatworldfoundationmodels(WFMs)resolvethis vidualclothing,resolutionislow,andposesareextreme.Dedicated 193
+    136 tension. WFMssuchas theNVIDIACosmosfamilyaretrained benchmarkssuchasSoccerNet-v3ReID[5]andtheDeepSportradar 194
+    137 to generate physically plausible, temporally coherent video for player ReID challenge [35] sparked sports-specific approaches, 195
+    138 embodied-AIapplications[25],andtheirtransfercapabilitiesallow including contrastive CLIP-based training [11], part-based and 196
+    139 conditioninggenerationonspatialcontrolmapsextractedfroma keypoint-promptablerepresentationsforocclusionrobustness[31, 197
+    140 sourcevideo,suchasedges,depth,andsegmentation[24,26,27]. 32],multi-tasklearningofidentity,teamaffiliation,androle[22], 198
+    141  Becausethegeneratedvideoisconstrainedtofollowthesource’s andjersey-numberrecognitionasanauxiliaryidentitycue[2,7,19]. 199
+    142 spatialstructure,thesource’sannotationsremainapproximately Whiletheseeffortsaremodel-centric,ourworkiscomplementary 200
+    143 validontheoutput:theplayersstaywheretheboxessaytheyare. anddata-centric:wechangewhatthemodelistrainedon,notthe 201
+    144 Thispropertyhasbeenexploitedtoscalesyntheticdrivingdata[29]; modelitself,especiallyundertheassumptionofreal-timeinference 202
+    145 toourknowledgeithasnotbeenbroughttosportsvideo,andtwo requirementsforbroadcastanalysis. 203
+    146 obstaclesstandintheway.First,ageneral-purposephysical-AI                204 
+    147 modelisnotabroadcastsoccermodel:naivelytransferredclips                 205 
+                                            2.2 SyntheticDataforRe-Identification   
+    148 missthelookofstadiumlighting,grass,kits,andbroadcastcameras.            206 
+    149 Second,appearanceeditsmustrespectthestructureofthesport: Game-enginepipelinesdemonstratedthatrenderedhumanscan 207
+    150 recoloringjerseysarbitrarilywoulddestroytheteamsemantics superviseReID:PersonXdissectedviewpointeffectswithacontrol- 208
+    151 thatReIDmodelsrelyon.               lable3Dtestbed[34],RandPersonandUnrealPersonscaledrandom- 209
+    152  We address both with a two-stage pipeline (Figure 1). Stage ized3Dcharacters[37,40],andClonedPersonclonedrealoutfits 210
+    153 1domain-specializesCosmos3viaLoRA-basedsupervisedfine- onto3Dcharacters[36].Insoccer,SoccerSynth-Detectionrenders 211
+    154 tuningon189-framewindowssplitfromSoccerNetGameState syntheticmatchesforplayerdetection[28].Rendereddatacarries 212
+    155 Reconstructionbroadcastclips[33],withstructuredJSONcaptions freelabelsbutapersistentappearancegap.Generativeaugmenta- 213
+    156 producedbyQwen3-VL[1].Stage2appliesmulti-controlvideo-to- tionattacksrealisminstead:CamStyletransferscamerastyles[45], 214
+    157 videotransfertoSportsMOTsoccertrainingclips[8],conditioning DG-Netcouplesdiscriminativeandgenerativelearning[44],and 215
+    158 onCannyedges[4],DepthAnythingV2depth[38],andHQ-SAM diffusionmodelsnowsynthesizeordiversifyidentitiesatscale,for 216
+    159 segmentation[16],andpromptingforcontrolleddiversityalong pre-trainingdata[23],posediversification[17],andvirtual-identity 217
+    160 twoaxes:lightingandteam-leveljerseycolor.Thegeneratedvari- generation[42];synthetic-to-realtransferhasalsobeenexplored 218
+    161 antsinheritthesourceclips’boxesandtrackidentities,arefiltered forvideo-basedReID[41].Thesemethodsactonpersoncropsor 219
+    162 byanautomatedfidelitycheck,andaremergedintotheReIDtrain- stillimages,sotheirlabelsareidentity-levelbyconstructionbut 220
+    163 ingset.Evaluationusesreal,held-outSportsMOTdataexclusively. providenovideo-levelbox/trackcorrespondence.Ourapproach 221
+    164  Ourcontributionsare:               occupies the missing cell: photorealistic video synthesis whose 222
+    165                                     MOT-styleannotations(boxesandtrackidentities)transferfrom 223
+    166                                     thesourceclip.                      224 
+    167   • Anannotation-preservingdataengineforsportsvideo.                    225 
+    168    Weshowthatstructure-conditionedworld-modeltransfer                   226 
+                                            2.3 WorldFoundationModelsandControllable
+    169    re-rendersrealsoccerclipsundernewappearancecondi-                    227 
+                                               VideoGeneration                      
+    170    tionswhilekeepingthesource’sboxesandtrackidentities                  228 
+    171    approximatelyvalid.              Conditioninggenerationonspatialstructurewaspopularizedby 229
+    172   • Aconcretetwo-stagepipeline.LoRAfine-tuningspecial- ControlNetforimages[39]andextendedtovideobylatentvideo 230
+    173    izesageneralphysical-AIworldmodeltobroadcastsoccer diffusionmodels[3].NVIDIACosmosrecastsuchmodelsasworld 231
+    174                                   2                                     232 
+===== PAGE 3 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       WorldModelsasDataEngines:Annotation-PreservingSyntheticVideoforSoccerAthleteRe-Identification MMSports’26,Novemberxx,2026,RiodeJaneiro,Brazil
+                                                                                    
+    233                                                                         291 
+    234                                                                         292 
+    235                                                                         293 
+    236                                                                         294 
+    237                                                                         295 
+    238                                                                         296 
+    239                                                                         297 
+    240                                                                         298 
+    241                                                                         299 
+    242                                                                         300 
+    243                                                                         301 
+    244                                                                         302 
+    245                                                                         303 
+    246                                                                         304 
+    247                                                                         305 
+    248                                                                         306 
+    249                                                                         307 
+    250                                                                         308 
+    251                                                                         309 
+    252                                                                         310 
+    253                                                                         311 
+    254                                                                         312 
+    255                                                                         313 
+    256                                                                         314 
+    257                                                                         315 
+    258                                                                         316 
+    259                                                                         317 
+    260                                                                         318 
+       Figure2:Spatialcontrols.Thesourceframe(a)isdecomposedintoedges(b),depth(c),andplayersegmentation(d);thegenerated
+    261                                                                         319 
+       variant(e)followsthisstructure,sotheboxesdrawnon(a)remainalignedon(e).       
+    262                                                                         320 
+    263                                                                         321 
+    264 foundationmodelsforphysicalAI[25]:Cosmos-Transfer1intro-                322 
+    265 duced world-to-world transfer under adaptive multimodal con-            323 
+    266 trol (edge, blur, depth, segmentation) [24], refined by Cosmos-         324 
+    267 Transfer2.5 [26], and Cosmos 3 unifies prediction, transfer, and        325 
+    268 reasoning in a single omni-model with variants aimed at large-          326 
+    269 scalesyntheticdatageneration[27].Cosmos-Drive-Dreamsdemon-              327 
+    270 stratedthedata-engineusecasefordrivingperception[29].Forthe             328 
+    271 currentstudy,werelyonoff-the-shelfstructureextractors:Canny             329 
+    272 edges[4],DepthAnythingV2[38],andHQ-SAM[16,18],andon                     330 
+    273 theQwen3-VLvision-languagemodel[1]forstructuredprompting.               331 
+    274 Toourknowledge,oursisamongthefirstworkstospecializea                    332 
+    275 videoworldfoundationmodeltobroadcastsportsanduseitfor                   333 
+    276 annotation-preservingReIDaugmentation.                                  334 
+    277                                                                         335 
+    278                                                                         336 
+    279                                                                         337 
+    280                                                                         338 
+                                            Figure3:Traininglossandgradient-normevolutionduring
+    281                                                                         339 
+       2.4 SportsVideoDatasets              NVIDIACosmos3SFTonSoccerNet-GSRdata(oneoftwo
+    282                                                                         340 
+                                            data-parallelshardsshown).              
+    283 TheSoccerNetfamilyprovidesbroadcastsocceratscale,fromaction             341 
+    284 spotting[9,10]totracking[6],multi-viewReID[5],andgame-state             342 
+    285 reconstruction[33],whose30-second1080pclipsformourfine- 3 Method        343 
+    286 tuningcorpus.SportsMOT[8]contributesmulti-objecttracking                344 
+                                            3.1 ProblemSetupandKeyProperty          
+    287 acrosssoccer,basketball,andvolleyball;itssoccersubsetisour              345 
+    288 transfersourceand,heldoutandreal-only,ourevaluationtarget. Let𝑥 ={𝑥 𝑡}𝑇 𝑡=1 bearealsoccerclipwithper-frameplayerbound- 346
+    289 TeamTrackextendsmulti-sporttrackingtofull-pitchviews[30]. ingboxes B = {𝑏 𝑡 𝑖} andtrackidentitiesY = {𝑦𝑖},whereeach 347
+    290                                   3                                     348 
+===== PAGE 4 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       MMSports’26,Novemberxx,2026,RiodeJaneiro,Brazil                    Anon.     
+                                                                                    
+    349 identitycorrespondstooneground-truthtracklet.From𝑥 weex- structurethatReIDandtrackingrelyon;per-playerrecol- 407
+    350                                                                             
+       tractper-framespatialstructure𝑠(𝑥)=(cid:0)𝑒(𝑥),𝑑(𝑥),𝑚(𝑥)(cid:1)              
+                                     :Canny     oringwouldproduceimplausiblescenesanddestroyteam 408
+    351 edgemaps[4],monoculardepthfromDepthAnythingV2[38],and semantics.        409 
+    352 playersegmentationmasksfromHQ-SAM[16]seededwiththe                      410 
+    353 ground-truthboxes.Astructure-conditionedworldmodel𝐺 𝜃 then              411 
+    354 producesanewclip                     Structureconditioningkeepstheplayers’positions,scales,and 412
+    355                                     poseslockedtothesource,soeachgeneratedwindowinheritsthe 413
+    356             𝑥ˆ=𝐺 𝜃 (cid:0)𝑠(𝑥),𝑝(cid:1), (1) sourceannotationsunchanged(Figure2).Generatedwindowspass 414
+    357                                     anautomatedfidelityfiltertoreducenoisebyexcludingscarcely 415
+    358 wherethetextprompt𝑝specifiesthedesiredappearance(lighting, annotatedidentities(≤4cropsperID)andunrealisticallystretched 416
+    359 teamkitcolors).Because𝐺                                                     
+                     𝜃                                                              
+                      isconstrainedtofollow𝑠(𝑥),players aspectratios.           417 
+    360 in𝑥ˆoccupyapproximatelythesameimageregionsasin𝑥,sothe Jerseycolorisastrong(ifnotdominant)cueinsportsReID,so 418
+    361 pair(B,Y)remainsapproximatelyvalidfor𝑥ˆ. changingitraisesalabelingquestion:isarecoloredplayerstillthe 419
+    362  TheReIDtaskisdefinedontracklets.Trainingsamplesareper- “same”identity?Wetreateverygeneratedvariantofasourcetrack- 420
+    363 soncropscutfromB;eachcropcarriesitstrackletidentity𝑦𝑖.Syn- letasanewidentity,inheritingonlythesource’scrop-to-tracklet 421
+    364 theticclipscontributeadditionalcropsunderthelabelingpolicyof grouping,forlightingandjersey-colorvariantsalike.Keepingthe 422
+    365 Section3.3.Syntheticdataenterstrainingonly;everyevaluation sourceidentitywouldinsteadforcetheembeddingtomatchacross 423
+    366 cropisreal.                         kits,suppressingacuethatisconstant,andinformative,withinany 424
+    367                                     singlematch.Mintingnewidentitiesavoidsthislabelconflictand 425
+    368                                     enlargesthetrainingidentitypoolroughlyninefold(Table1).Vari- 426
+       3.2 Stage1:DomainLoRAFine-Tuning                                             
+    369                                     antsofthesamesourcetrackletadditionallyactashardnegatives 427
+    370 Cosmos3istrainedasageneralworldmodelforphysicalAI[27]; thatsharepose,geometry,andbackground,pushingtheembedding 428
+    371 itspriordoesnotspecificallycoverthelookofbroadcastsoccer todiscriminateonplayerappearanceratherthanonscenecontext. 429
+    372 suchaswideelevatedcameras,manicuredgrass,stadiumlighting, Eachsyntheticidentityremainsinternallycoherent:generationis 430
+    373 kitfabricsorcrowdbokeh.Weclosethisgapwithsupervisedfine- per-windowwithafixedprompt,sokitcolorandlightingarestable 431
+    374 tuningofCosmos3Superusingtheofficialcosmos-framework acrossitscrops.    432 
+       post-trainingrecipe(vision_sft_super),whichadaptsthegen-                     
+    375                                                                         433 
+       eratorwithlow-rankadaptation(LoRA)[15]ratherthanfullfine-                    
+    376                                                                         434 
+       tuning(Figure3).                                                             
+    377                                                                         435 
+         Thefine-tuningcorpusisbuiltfromSoccerNetGameStateRecon- 3.4 PromptGeneration
+    378                                                                         436 
+    379 struction[33]sinceitprovidescleanfeedvideoswithoutexternal Allprompts,forfine-tuningcaptionsandinference-timetransfer 437
+    380 artifactssuchasgraphicsoverlay:each30-second,1080pbroadcast alike,areproducedbyQwen3-VL-32B-Instruct[1]underonefixed 438
+    381 clipissplitintonon-overlapping189-framewindows,matchingthe JSONschemawithfieldsforscenesummary,camerastyle,light- 439
+    382 temporalwindowprocessedbythegenerator,andresizedto720p ing/weather,pitchcondition,andper-teamkitcolors.Atfine-tuning 440
+    383 viaLanczosinterpolationtooptimizeoutputquality. timetheVLMfillstheschemabydescribingthesourcewindow;at 441
+    384  Followingtheauthors’guidelines,eachwindowispairedwitha inferencetimethesameschemaisfilledfromthesourcewindow 442
+    385 structuredJSONcaptiongeneratedbyQwen3-VL-32B-Instruct[1], andtheneditedprogrammatically:onlythelightingandkit-color 443
+    386 describingscenecontent,camerastyle,lighting,weather,andthe fieldschange,allotherfieldskeeptheVLM’sdescriptionofthe 444
+    387 twoteams’kitcolors.Wefine-tunewithLoRArank16,learningrate source.Usingasingleschemaonbothsideskeepstheinference- 445
+    388 0.0005,and1000iterationson4×H200GPUs(thefullconfiguration timepromptsinsidethedistributionthemodelwastunedonand 446
+    389 islistedinSection4.2).              makestheappearanceeditexplicitandauditable,leveragingthe 447
+    390                                     still-presentoriginalNVIDIACosmostransfercapabilities. 448
+    391 3.3 Stage2:ControllableSynthesis                                        449 
+    392                                                                         450 
+       Forevery189-framewindowofaSportsMOTsoccertrainingclip[8]                     
+    393 weextractthecontrolstack𝑠(𝑥)andgeneratevariantswiththe                      
+                                            3.5 ReIDTrainingwithSyntheticAugmentation
+                                                                                451 
+    394                                                                         452 
+       specializedmodelunderpromptsthatvaryexactlyoneorbothof                       
+    395                                     Personcropsareextractedfromeveryannotatedbox,resizedto 453
+       twodiversityaxes:                                                            
+    396                                     256×128,andlabeledwiththeirtrackletidentity.Toaccountfor 454
+    397   Lighting. Cleardaylight,overcastandnighttime.Thesecon- real-timeinferencerequirements,twosmallarchitecturesareinstan- 455
+    398    ditionsalterglobalillumination,groundreflectance,shad- tiatedasReIDmodels:astandardfullyconvolutionalonebasedon 456
+    399    owsandatmosphericcontrast,actuallyintroducingvari- ResNet-50[12]andavisiontransformeronebasedonMViTv2[20] 457
+    400    abilityinplayerappearance(Section5). initstiniestconfiguration.Boththesebackbonesincorporateglobal 458
+    401   Team-leveljerseycolor. Bothteams’kitcolorsarere-specified averagepoolingtofeedtheiroutputtoashallowlinearheadfor512- 459
+    402    attheteamlevel:allplayersofateamreceivethesamenew dimensionalembeddingextraction,andaretrainedfor10epochs 460
+    403    kit,andpromptsareconstrainedtokeepthetwoteams’ withthestandardcombinationofidentitycross-entropyandhard- 461
+    404    colorsmutuallycontrastinganddistinctfromrefereeand miningtripletloss[14]followingcommonstrong-baselineprac- 462
+    405    goalkeepercolors.Team-levelrecoloringpreservestheteam tice[21].      463 
+    406                                   4                                     464 
+===== PAGE 5 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       WorldModelsasDataEngines:Annotation-PreservingSyntheticVideoforSoccerAthleteRe-Identification MMSports’26,Novemberxx,2026,RiodeJaneiro,Brazil
+       Table1:CompositionoftheReIDdata.Syntheticvariantsare Table3:MainresultsonrealSportsMOTsoccerevaluation
+    465                                                                         523 
+       derivedfromtherealtrainingclipsandareusedfortraining datafortheMViTv2architecturalvariant.
+    466                                                                         524 
+       only.                                                                        
+    467                                                                         525 
+    468                                       Trainingdata mAP R@1 R@5 R@10 R@20 526
+    469   Split(SportsMOTsoccer) Clips Identities Crops                         527 
+                                              Realonly 0.433 0.706 0.901 0.943 0.973
+    470                                                                         528 
+          Realtrain      48   84   2039       +Cosmos3SFT 0.528 0.802 0.948 0.975 0.985
+    471                                                                         529 
+          Syntheticaugmentations 48 702 9461  Synth→Real 0.456 0.726 0.924 0.959 0.983
+    472                                                                         530 
+          Realvalidation 40   105  1869                                             
+    473                                                                         531 
+    474                                                                         532 
+                                            (i.e.,+Cosmos3SFT),andperformingsynthetic-onlypre-training
+    475 Table2:MainresultsonrealSportsMOTsoccerevaluation                       533 
+                                            forsubsequentreal-onlyfine-tuning(i.e.,Synth→Real).
+    476 datafortheResNet-50architecturalvariant.                                534 
+                                             Bothbackbonesanswer(i)affirmatively:jointaugmentationlifts
+    477                                                                         535 
+                                            mAPfrom0.420to0.477(+5.7percentagepoints,pp)withResNet-50
+    478                                                                         536 
+         Trainingdata mAP R@1 R@5 R@10 R@20 andfrom0.433to0.528(+9.5pp)withMViTv2,withrank-1risingby
+    479                                                                         537 
+                                            +6.1and+9.6pprespectivelyandgainspersistingthroughrank-20,
+    480  Realonly  0.420 0.682 0.904 0.950 0.980                                538 
+                                            thatis,onaverage,the+7.6ppmAPand+7.9pprank-1quotedin
+    481  +Cosmos3SFT 0.477 0.743 0.941 0.973 0.988                              539 
+                                            theabstract.Theattention-basedbackbonebenefitsthemost,con-
+    482  Synth→Real 0.428 0.686 0.912 0.958 0.985                               540 
+                                            sistentwiththeweakerinductivebiasesoftransformersrewarding
+    483                                                                         541 
+                                            additionaldatadiversity.Regarding(ii),synthetic-onlypre-training
+    484                                                                         542 
+                                            followedbyreal-onlyfine-tuningalsoimprovesoverthereal-only
+    485                                                                         543 
+       4  Experiments                       baseline(+0.8and+2.3ppmAP),buttrailsjointaugmentationbya
+    486                                                                         544 
+    487 4.1 Datasets,Protocol,andMetrics    clearmargin:thereal-onlyfine-tuningstageplausiblyoverwrites 545
+                                            partofthediversityacquiredfromsyntheticdataduetothelimited
+    488 Data.WeusethesoccersubsetofSportsMOT[8]:its4distinct                    546 
+                                            sizeoftherealsample,whereastrainingontheunionletsrealand
+    489 matchesyield48non-overlappingtrainingclips,foratotalof84                547 
+                                            syntheticcropsshapetheembeddingjointly.Figure4showsgen-
+    490 annotatedtrackletsover2039crops(Table1).SoccerNet-GSR[33]               548 
+                                            eratedvariantsunderlyingthesegains,includingarepresentative
+    491 isusedforfine-tuningonly.Thetwosourcesaredistinctdatasets               549 
+                                            failurecase.                            
+    492 fromdistinctproviders;yetweadditionallyverifiedthatnomatch              550 
+    493 appearsinboththefine-tuningcorpusandtheevaluationclips.                 551 
+                                            5 DiscussionandLimitations              
+    494  Protocol.Identitiesareground-truthtracklets.Forevaluation,             552 
+    495 queryandgallerycropsaresampledfromthosetrackletsincluded Residuallabelnoise.Downstreammetricgainsprovideonlyin- 553
+    496 inthedisjointSportsMOTsoccer-onlyvalidationset.Whilereal directevidenceoflabelfidelity,andannotationdriftongenerated 554
+    497 datasetsareconstructedbysamplingoriginalclipseachsecondto clipsisstillpresent:heavyocclusioncancauseageneratedplayer 555
+    498 avoidnear-identicalcrops,syntheticaugmentationsamplesfrom todeviatefromthesourcelayout,andre-renderedjerseynumbers 556
+    499 generatedclipseachhalfsecond,withthedualgoalofincreasing arehardlyguaranteedtostaylegibleorconsistent,whichweak- 557
+    500 datasetsizeandeasingqualitativeinspectionofadherencetothe ensnumber-basedcues[2,19].Whilelessimportantforreal-time 558
+    501 originalground-truthannotations.    monocular-camerabroadcastReIDsinceopticalcharacterrecogni- 559
+    502  Metrics.Followingcommonpractice,wereportmeanaverage tion(OCR)isoftennotaviablesolution,itisnonethelessundeniable 560
+    503 precision(mAP)andCMCrank-1/rank-5/rank-10/rank-20. thatalphanumericgibberishduringgenerationmightintroduce 561
+    504                                     noiseinthelearningprocess.          562 
+    505 4.2 ImplementationandCost            Scope.Ourevidenceisforsoccerandforonedatasetpair(i.e., 563
+    506                                     SoccerNet-GSRforspecialization,SportsMOTforsynthesisand 564
+       Stage-1 fine-tuning uses the default vision_sft_super recipe:                
+    507                                     evaluation).Claimsaboutothersports,otherdatasets,ordetection 565
+       LoRArank16,learningrate0.0005,1000iterationson4×H20080GB                     
+    508                                     andtrackingtasksarefuturework,asareacomparisonagainst 566
+       GPUs(totaling23.5GPU-hours).Stage-2generationproducesone                     
+    509                                     cheapergenerators(animagediffusionmodelwithper-frameCon- 567
+       variantperpromptpersourcewindowat1280×720resolution(1.15                     
+    510                                     trolNet[39])andvalidationonexternalbenchmarkssuchasthe 568
+       GPU-hoursca.perbatchof4clips).ControlextractionusesDepth                     
+    511                                     SoccerNet-v3ReID[5]oneortheDeepSportradar[35]one. 569
+       AnythingV2[38](ViT-Lvariant)andHQ-SAM[16]seededwith                          
+    512                                      Cost.Thepipelinereliesona64-billion-parametergenerator 570
+       ground-truthboxes.ReIDtrainingruns10epochswithAdamW                          
+    513                                     anda32-billion-parameterVLM;LoRAkeepsfine-tuningtractable, 571
+       optimizerunderweightdecaywithinitiallearningratesof0.1and                    
+    514                                     butgenerationatdatasetscaleremainsthedominantcost(GPU- 572
+       0.0025forResNet-50andMViTv2architecturesrespectively.                        
+    515                                     hoursperclip).Forfurtherclarity,wedisclosefullcostsinmore 573
+    516                                     detailinSection4.2.                 574 
+       4.3 MainResults                                                              
+    517                                      Assumptions.Identityequalsground-truthtracklet,whichis 575
+    518 Table2andTable3containthecentralcomparison.Thetwoques- standardforMOT-derivedReIDdatabutlimitsidentitiestoclip- 576
+    519 tionsitanswersare:(i)doesworld-modelaugmentationimprove levelscope;andcontrolqualityinheritsthefailuremodesofthe 577
+    520 overtrainingonrealdataalone;(ii)whichstrategyachievesbetter extractors(depthandsegmentationdegradeindenseplayerpile- 578
+    521 resultsbetweendirectlyaddingsyntheticdatatotherealdataset ups).         579 
+    522                                   5                                     580 
+===== PAGE 6 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       MMSports’26,Novemberxx,2026,RiodeJaneiro,Brazil                    Anon.     
+                                                                                    
+    581                                                                         639 
+    582                                                                         640 
+    583                                                                         641 
+    584                                                                         642 
+    585                                                                         643 
+    586                                                                         644 
+    587                                                                         645 
+    588                                                                         646 
+    589                                                                         647 
+    590                                                                         648 
+    591                                                                         649 
+    592                                                                         650 
+    593                                                                         651 
+    594                                                                         652 
+    595                                                                         653 
+    596                                                                         654 
+    597                                                                         655 
+    598                                                                         656 
+    599                                                                         657 
+    600                                                                         658 
+    601                                                                         659 
+    602                                                                         660 
+    603                                                                         661 
+    604                                                                         662 
+    605                                                                         663 
+    606                                                                         664 
+    607                                                                         665 
+    608 Figure4:Qualitativeresultsofthesoccer-specializedgeneratoronSportsMOTsourcesacrosslightingandjersey-colorprompts, 666
+    609 includingarepresentativefailurecase(bottomrow).                         667 
+    610                                                                         668 
+    611 6 Conclusion                        underappearancechangescouldtransfertopedestriansurveillance; 669
+    612                                                                         670 
+       Wepresentedanannotation-preservingdataengineforsoccerath- ourpipelinetargetssports-analyticsresearch,anyreleasedartifacts
+    613                                                                         671 
+       leteReID:aworldfoundationmodel,specializedtobroadcastsoc- (fine-tunedadapters,generatedclips)remainboundbythesource
+    614                                                                         672 
+       cerbyLoRAfine-tuningonSoccerNet-GSRanddrivenbystruc- modelanddatasetlicenses,andwebuildnogalleriesofcivilian
+    615                                                                         673 
+       turedVLMprompts,re-rendersannotatedSportsMOTclipsunder identities.Second,thepipelinemightre-rendersreal,identifiable
+    616                                                                         674 
+       controlledlightingandteam-leveljersey-colorchangeswhilethe people under conditions that never occurred and without their
+    617                                                                         675 
+       sourceboxesandtrackidentitiescarryover.Mergedintotrain- explicitconsent;ourpromptseditonlyscene-levelnuisancefac-
+    618                                                                         676 
+       ing and evaluated on real data only, the generated variants im- tors(lighting,teamkits)andneverperson-levelattributes,butthe
+    619                                                                         677 
+       proveReIDoverreal-onlytrainingonbothaconvolutional(ResNet- samemachinerycouldfabricatemisleadingfootage,soanyreleased
+    620                                                                         678 
+       50)andanattention-based(MViTv2)backbone,by+7.6percent- syntheticclipshouldcarryprovenancedisclosuresuchaswater-
+    621                                                                         679 
+       age points mAP and +7.9 percentage points rank-1 on average. markingormetadatatags.Finally,syntheticappearancediversity
+    622                                                                         680 
+       Synthetic-onlypre-trainingfollowedbyreal-onlyfine-tuningalso doesnotguaranteedemographicdiversity,andde-emphasizingkit
+    623                                                                         681 
+       helps,thoughconsistentlylessthanjointaugmentation,indicating colormayshifttheembeddingontophysicalcharacteristicssuchas
+    624                                                                         682 
+       thatthegenerateddiversityisbestconsumedalongsiderealdata buildorskintone:fairnessauditingacrossdemographicgroups,of
+    625                                                                         683 
+       ratherthanbeforeit.Becausetheengineeditsonlynuisancefactors boththegeneratorandtheresultingReIDmodels,shouldtherefore
+    626                                                                         684 
+       whileinheritingannotations,therecipeappliesunchangedtoany beencouragedbeforeanyuse.
+    627                                                                         685 
+       identity-labeledsportsfootage:extendingittoothersportsandto                  
+    628                                                                         686 
+       downstreamtracking,scalingthegenerationbudget,andauditing References         
+    629                                                                         687 
+       itsfairnessimplicationsarenaturalnextsteps. [1] ShuaiBai,YuxuanCai,RuizheChen,KeqinChen,XionghuiChen,ZesenCheng,
+    630                                                                         688 
+                                              LianghaoDeng,WeiDing,ChangGao,ChunjiangGe,WenbinGe,ZhifangGuo,
+    631                                       QidongHuang,JieHuang,FeiHuang,BinyuanHui,ShutongJiang,ZhaohaiLi, 689
+       EthicsandPrivacyStatement                                                    
+    632                                       MingshengLi,MeiLi,KaixinLi,ZichengLin,JunyangLin,XuejingLiu,Jiawei 690
+    633 Thisworkusespubliclyreleased,research-licensedfootageofpro- Liu,ChenglongLiu,YangLiu,DayihengLiu,ShixuanLiu,DunjieLu,RuilinLuo, 691
+                                              ChenxuLv,RuiMen,LingchenMeng,XuanchengRen,XingzhangRen,Sibo
+    634 fessionalathletes(SportsMOT,SoccerNet-GSR)andintroducesno Song,YuchongSun,JunTang,JianhongTu,JianqiangWan,PengWang,Pengfei 692
+    635 newrecordingsofprivateindividuals.Threerisksspecifictoidentity- Wang,QiuyueWang,YuxuanWang,TianbaoXie,YihengXu,HaiyangXu,JinXu, 693
+                                              ZhiboYang,MingkunYang,JianxinYang,AnYang,BowenYu,FeiZhang,Hang
+    636 controlledsyntheticpipelinesnonethelessdeservestatement.First, Zhang,XiZhang,BoZheng,HumenZhong,JingrenZhou,FanZhou,JingZhou, 694
+    637 ReIDisadual-usetechnology:recipesthathardenathletematching YuanzhiZhu,andKeZhu.2025.Qwen3-VLTechnicalReport.arXiv:2511.21631 695
+    638                                   6                                     696 
+===== PAGE 7 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       WorldModelsasDataEngines:Annotation-PreservingSyntheticVideoforSoccerAthleteRe-Identification MMSports’26,Novemberxx,2026,RiodeJaneiro,Brazil
+                                                                                    
+    697   [cs.CV].arXiv:2511.21631[cs.CV]doi:10.48550/arXiv.2511.21631 [19] MariaKoshkinaandJamesH.Elder.2024. AGeneralFrameworkforJersey 755
+        [2] BaveshBalaji,JerrinBright,HarishPrakash,YuhaoChen,DavidA.Clausi, NumberRecognitioninSportsVideo.InProceedingsoftheIEEE/CVFConference
+    698                                                                         756 
+          andJohnZelek.2023. JerseyNumberRecognitionusingKeyframeIdentifi- onComputerVisionandPatternRecognitionWorkshops(CVPRW).3235–3244.
+    699   cationfromLow-ResolutionBroadcastVideos.InProceedingsofthe6thInter- arXiv:2405.13896[cs.CV]doi:10.1109/CVPRW63382.2024.00329 757
+    700   nationalWorkshoponMultimediaContentAnalysisinSports(MMSports’23). [20] YanghaoLi,Chao-YuanWu,HaoqiFan,KarttikeyaMangalam,BoXiong,Jitendra 758
+          AssociationforComputingMachinery,123–130. arXiv:2309.06285[cs.CV] Malik,andChristophFeichtenhofer.2022.MViTv2:ImprovedMultiscaleVision
+    701                                                                         759 
+          doi:10.1145/3606038.3616162         TransformersforClassificationandDetection.InProceedingsoftheIEEE/CVF
+    702 [3] AndreasBlattmann,TimDockhorn,SumithKulal,DanielMendelevitch,Maciej ConferenceonComputerVisionandPatternRecognition(CVPR).4804–4814.doi:10. 760
+    703   Kilian,DominikLorenz,YamLevi,ZionEnglish,VikramVoleti,AdamLetts, 1109/CVPR52688.2022.00476 761
+          VarunJampani,andRobinRombach.2023. StableVideoDiffusion:Scaling [21] HaoLuo,YouzhiGu,XingyuLiao,ShenqiLai,andWeiJiang.2019.BagofTricks
+    704   LatentVideoDiffusionModelstoLargeDatasets. arXiv:2311.15127[cs.CV] andaStrongBaselineforDeepPersonRe-Identification.InProceedingsofthe 762
+    705   doi:10.48550/arXiv.2311.15127       IEEE/CVFConferenceonComputerVisionandPatternRecognitionWorkshops 763
+        [4] JohnCanny.1986.AComputationalApproachtoEdgeDetection.IEEETrans- (CVPRW).1487–1495.arXiv:1903.07071[cs.CV]doi:10.1109/CVPRW.2019.00190
+    706                                                                         764 
+          actionsonPatternAnalysisandMachineIntelligencePAMI-8,6(1986),679–698. [22] AmirM.Mansourian,VladimirSomers,ChristopheDeVleeschouwer,and
+    707   doi:10.1109/TPAMI.1986.4767851      ShohrehKasaei.2023.Multi-taskLearningforJointRe-identification,TeamAf- 765
+    708 [5] AnthonyCioppa,AdrienDeliège,SilvioGiancola,BernardGhanem,andMarc filiation,andRoleClassificationforSportsVisualTracking.InProceedingsofthe 766
+          VanDroogenbroeck.2022.ScalingupSoccerNetwithmulti-viewspatiallocal- 6thInternationalWorkshoponMultimediaContentAnalysisinSports(MMSports
+    709                                                                         767 
+          izationandre-identification.ScientificData9(2022),355.doi:10.1038/s41597- ’23).AssociationforComputingMachinery,103–112.arXiv:2401.09942[cs.CV]
+    710   022-01469-1                         doi:10.1145/3606038.3616172       768 
+    711 [6] AnthonyCioppa,SilvioGiancola,AdrienDeliège,LeKang,XinZhou,Zhiyu [23] KeNiu,HaiyangYu,XuelinQian,TengFu,BinLi,andXiangyangXue.2025. 769
+          Cheng,BernardGhanem,andMarcVanDroogenbroeck.2022. SoccerNet- SynthesizingEfficientDatawithDiffusionModelsforPersonRe-Identification
+    712   Tracking:MultipleObjectTrackingDatasetandBenchmarkinSoccerVideos.In Pre-Training.MachineLearning114,3(2025),66.arXiv:2406.06045doi:10.1007/ 770
+    713   ProceedingsoftheIEEE/CVFConferenceonComputerVisionandPatternRecog- s10994-024-06663-3 771
+          nitionWorkshops(CVPRW).3490–3501.arXiv:2204.06918[cs.CV]doi:10.1109/ [24] NVIDIA.2025.Cosmos-Transfer1:ConditionalWorldGenerationwithAdaptive
+    714                                                                         772 
+          CVPRW56347.2022.00393               MultimodalControl.arXiv:2503.14492[cs.CV]doi:10.48550/arXiv.2503.14492
+    715 [7] BharathComandur.2022.SportsRe-ID:ImprovingRe-IdentificationofPlayers [25] NVIDIA.2025. CosmosWorldFoundationModelPlatformforPhysicalAI. 773
+    716   inBroadcastVideosofTeamSports.arXivpreprint.arXiv:2206.02373[cs.CV] arXiv:2501.03575[cs.CV]doi:10.48550/arXiv.2501.03575 774
+          https://arxiv.org/abs/2206.02373  [26] NVIDIA.2025.WorldSimulationwithVideoFoundationModelsforPhysicalAI.
+    717                                                                         775 
+        [8] YutaoCui,ChenkaiZeng,XiaoyuZhao,YichunYang,GangshanWu,andLimin IntroducesCosmos-Predict2.5andCosmos-Transfer2.5.arXiv:2511.00062[cs.CV]
+    718   Wang.2023. SportsMOT:ALargeMulti-ObjectTrackingDatasetinMultiple doi:10.48550/arXiv.2511.00062 776
+    719   SportsScenes.InProceedingsoftheIEEE/CVFInternationalConferenceonCom- [27] NVIDIA. 2026. Cosmos 3: Omnimodal World Models for Physical AI. 777
+          puterVision(ICCV).9887–9897.arXiv:2304.05170[cs.CV]doi:10.1109/ICCV51070. arXiv:2606.02800[cs.CV]doi:10.48550/arXiv.2606.02800
+    720   2023.00910                        [28] Haobin Qin, Calvin Yeung, Rikuhei Umemoto, and Keisuke Fujii. 2025. 778
+    721 [9] AdrienDeliège,AnthonyCioppa,SilvioGiancola,MeisamJ.Seikavandi,Ja- SoccerSynth-Detection:ASyntheticDatasetforSoccerPlayerDetection.arXiv 779
+          cobV.Dueholm,KamalNasrollahi,BernardGhanem,ThomasB.Moeslund,and preprint.arXiv:2501.09281[cs.CV] https://arxiv.org/abs/2501.09281
+    722                                                                         780 
+          MarcVanDroogenbroeck.2021.SoccerNet-v2:ADatasetandBenchmarksfor [29] XuanchiRen,YifanLu,TianshiCao,RuiyuanGao,ShengyuHuang,Amirmo-
+    723   HolisticUnderstandingofBroadcastSoccerVideos.InProceedingsoftheIEEE/CVF jtabaSabour,TianchangShen,TobiasPfaff,JayZhangjieWu,RunjianChen, 781
+    724   ConferenceonComputerVisionandPatternRecognitionWorkshops(CVPRW). SeungWookKim,JunGao,LauraLeal-Taixé,MikeChen,SanjaFidler,andHuan 782
+          4508–4519.arXiv:2011.13367[cs.CV]doi:10.1109/CVPRW53098.2021.00508 Ling.2025.Cosmos-Drive-Dreams:ScalableSyntheticDrivingDataGeneration
+    725                                                                         783 
+       [10] SilvioGiancola,MohieddineAmine,TarekDghaily,andBernardGhanem.2018. withWorldFoundationModels.Corecontributorslisted;fullcontributorlistin
+    726   SoccerNet:AScalableDatasetforActionSpottinginSoccerVideos.InProceedings AppendixAofthepaper.arXiv:2506.09042[cs.CV]doi:10.48550/arXiv.2506.09042 784
+    727   oftheIEEE/CVFConferenceonComputerVisionandPatternRecognitionWorkshops [30] AtomScott,IkumaUchida,NingDing,RikuheiUmemoto,RoryBunker,Ren 785
+          (CVPRW).1711–1721.arXiv:1804.04527[cs.CV]doi:10.1109/CVPRW.2018.00223 Kobayashi,TakeshiKoyama,MasakiOnishi,YoshinariKameda,andKeisuke
+    728 [11] KonradHabel,FabianDeuser,andNorbertOswald.2022.CLIP-ReIdent:Con- Fujii.2024.TeamTrack:ADatasetforMulti-SportMulti-ObjectTrackinginFull- 786
+    729   trastiveTrainingforPlayerRe-Identification.InProceedingsofthe5thInter- pitchVideos.InProceedingsoftheIEEE/CVFConferenceonComputerVisionand 787
+          nationalACMWorkshoponMultimediaContentAnalysisinSports(MMSports PatternRecognitionWorkshops(CVPRW).3357–3366.arXiv:2404.13868[cs.CV]
+    730                                                                         788 
+          ’22).AssociationforComputingMachinery,129–135.arXiv:2303.11855[cs.CV] doi:10.1109/CVPRW63382.2024.00340
+    731   doi:10.1145/3552437.3555698       [31] Vladimir Somers, Alexandre Alahi, and Christophe De Vleeschouwer. 789
+    732 [12] KaimingHe,XiangyuZhang,ShaoqingRen,andJianSun.2016.DeepResidual 2024. KeypointPromptableRe-Identification.InComputerVision–ECCV 790
+          LearningforImageRecognition.InProceedingsoftheIEEEConferenceonCom- 2024 (Lecture Notes in Computer Science, Vol. 15137). Springer, 216–233.
+    733                                                                         791 
+          puterVisionandPatternRecognition(CVPR).770–778.arXiv:1512.03385[cs.CV] arXiv:2407.18112[cs.CV]doi:10.1007/978-3-031-72986-7_13
+    734   doi:10.1109/CVPR.2016.90          [32] VladimirSomers,ChristopheDeVleeschouwer,andAlexandreAlahi.2023.Body 792
+    735 [13] ShutingHe,HaoLuo,PichaoWang,FanWang,HaoLi,andWeiJiang.2021. Part-BasedRepresentationLearningforOccludedPersonRe-Identification.In 793
+          TransReID:Transformer-basedObjectRe-Identification.InProceedingsofthe ProceedingsoftheIEEE/CVFWinterConferenceonApplicationsofComputerVision
+    736   IEEE/CVFInternationalConferenceonComputerVision(ICCV).14993–15002. (WACV).1613–1623. arXiv:2211.03679[cs.CV]doi:10.1109/WACV56688.2023. 794
+    737   arXiv:2102.04378[cs.CV]doi:10.1109/ICCV48922.2021.01474 00166         795 
+       [14] Alexander Hermans, Lucas Beyer, and Bastian Leibe. 2017. In De- [33] VladimirSomers,VictorJoos,AnthonyCioppa,SilvioGiancola,SeyedAbol-
+    738                                                                         796 
+          fense of the Triplet Loss for Person Re-Identification. arXiv preprint. fazlGhasemzadeh,FlorianeMagera,BaptisteStandaert,AmirMohammadMan-
+    739   arXiv:1703.07737[cs.CV] https://arxiv.org/abs/1703.07737 sourian,XinZhou,ShohrehKasaei,BernardGhanem,AlexandreAlahi,MarcVan 797
+    740 [15] EdwardJ.Hu,YelongShen,PhillipWallis,ZeyuanAllen-Zhu,YuanzhiLi,Shean Droogenbroeck,andChristopheDeVleeschouwer.2024. SoccerNetGame 798
+          Wang,LuWang,andWeizhuChen.2022.LoRA:Low-RankAdaptationofLarge StateReconstruction:End-to-EndAthleteTrackingandIdentificationonaMin-
+    741                                                                         799 
+          LanguageModels.InInternationalConferenceonLearningRepresentations(ICLR). imap.InProceedingsoftheIEEE/CVFConferenceonComputerVisionandPat-
+    742   arXiv:2106.09685[cs.CL] https://openreview.net/forum?id=nZeVKeeFYf9 ternRecognitionWorkshops(CVPRW).3293–3305. arXiv:2404.11335[cs.CV] 800
+    743 [16] Lei Ke, Mingqiao Ye, Martin Danelljan, Yifan Liu, Yu-Wing Tai, Chi- doi:10.1109/CVPRW63382.2024.00334 801
+          Keung Tang, and Fisher Yu. 2023. Segment Anything in High Qual- [34] XiaoxiaoSunandLiangZheng.2019.DissectingPersonRe-identificationfrom
+    744   ity. In Advances in Neural Information Processing Systems, Vol. 36. theViewpointofViewpoint.InProceedingsoftheIEEE/CVFConferenceon 802
+    745   arXiv:2306.01567 [cs.CV] https://proceedings.neurips.cc/paper_files/paper/ ComputerVisionandPatternRecognition(CVPR).608–617. arXiv:1812.02162 803
+          2023/hash/5f828e38160f31935cfe9f67503ad17c-Abstract-Conference.html doi:10.1109/CVPR.2019.00070
+    746                                                                         804 
+       [17] InèsHyeonsuKim,WoojeongJin,SoowonSon,JunyoungSeo,SeokjuCho, [35] GabrielVanZandycke,VladimirSomers,MaximeIstasse,CarloDelDon,and
+    747   JeongYeolBaek,ByeongwonLee,JoungBinLee,andSeungryongKim.2024. DavideZambrano.2022. DeepSportradar-v1:ComputerVisionDatasetfor 805
+    748   Pose-dIVE:Pose-DiversifiedAugmentationwithDiffusionModelforPerson SportsUnderstandingwithHighQualityAnnotations.InProceedingsofthe 806
+          Re-Identification.AcceptedtoCVPR2026Findings.arXiv:2406.16042[cs.CV] 5thInternationalACMWorkshoponMultimediaContentAnalysisinSports(MM-
+    749                                                                         807 
+          https://arxiv.org/abs/2406.16042    Sports’22).AssociationforComputingMachinery,1–8.arXiv:2208.08190[cs.CV]
+    750 [18] AlexanderKirillov,EricMintun,NikhilaRavi,HanziMao,ChloeRolland,Laura doi:10.1145/3552437.3555699 808
+    751   Gustafson,TeteXiao,SpencerWhitehead,AlexanderC.Berg,Wan-YenLo, [36] YananWang,XuezhiLiang,andShengcaiLiao.2022. CloningOutfitsfrom 809
+          PiotrDollár,andRossGirshick.2023. SegmentAnything.InProceedingsof Real-WorldImagesto3DCharactersforGeneralizablePersonRe-Identification.
+    752   theIEEE/CVFInternationalConferenceonComputerVision(ICCV).3992–4003. InProceedingsoftheIEEE/CVFConferenceonComputerVisionandPatternRecog- 810
+    753   arXiv:2304.02643[cs.CV]doi:10.1109/ICCV51070.2023.00371 nition(CVPR).4890–4899.arXiv:2204.02611doi:10.1109/CVPR52688.2022.00485 811
+    754                                   7                                     812 
+===== PAGE 8 =====
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+       MMSports’26,Novemberxx,2026,RiodeJaneiro,Brazil                    Anon.     
+                                                                                    
+    813 [37] YananWang,ShengcaiLiao,andLingShao.2020.SurpassingReal-WorldSource 2025.3574972 871
+          TrainingData:Random3DCharactersforGeneralizablePersonRe-Identification. [42] Xiao-WenZhang,DelongZhang,Yi-XingPeng,ZhiOuyang,JingkeMeng,and
+    814                                                                         872 
+          InProceedingsofthe28thACMInternationalConferenceonMultimedia(MM’20). Wei-ShiZheng.2025.VIPerson:FlexiblyGeneratingVirtualIdentityforPerson
+    815   ACM,3422–3430.arXiv:2006.12774doi:10.1145/3394171.3413815 Re-Identification.InProceedingsoftheIEEE/CVFInternationalConferenceon 873
+    816 [38] LiheYang,BingyiKang,ZilongHuang,ZhenZhao,XiaogangXu,JiashiFeng,and ComputerVision(ICCV).23374–23384.doi:10.1109/ICCV51701.2025.02170 874
+          HengshuangZhao.2024.DepthAnythingV2.InAdvancesinNeuralInformation [43] LiangZheng,LiyueShen,LuTian,ShengjinWang,JingdongWang,andQiTian.
+    817                                                                         875 
+          ProcessingSystems,Vol.37. arXiv:2406.09414[cs.CV] https://proceedings. 2015.ScalablePersonRe-identification:ABenchmark.InProceedingsoftheIEEE
+    818   neurips.cc/paper_files/paper/2024/hash/26cfdcd8fe6fd75cc53e92963a656c58- InternationalConferenceonComputerVision(ICCV).1116–1124. doi:10.1109/ 876
+    819   Abstract-Conference.html            ICCV.2015.133                     877 
+       [39] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. 2023. Adding Con- [44] ZhedongZheng,XiaodongYang,ZhidingYu,LiangZheng,YiYang,andJanKautz.
+    820   ditional Control to Text-to-Image Diffusion Models. In Proceedings of the 2019.JointDiscriminativeandGenerativeLearningforPersonRe-identification. 878
+    821   IEEE/CVF International Conference on Computer Vision (ICCV). 3813–3824. InProceedingsoftheIEEE/CVFConferenceonComputerVisionandPatternRecog- 879
+          arXiv:2302.05543[cs.CV]doi:10.1109/ICCV51070.2023.00355 nition(CVPR).2133–2142.arXiv:1904.07223doi:10.1109/CVPR.2019.00224
+    822                                                                         880 
+       [40] TianyuZhang,LingxiXie,LonghuiWei,ZijieZhuang,YongfeiZhang,BoLi, [45] ZhunZhong,LiangZheng,ZhedongZheng,ShaoziLi,andYiYang.2018.
+    823   andQiTian.2021.UnrealPerson:AnAdaptivePipelinetowardsCostlessPerson CameraStyleAdaptationforPersonRe-identification.InProceedingsofthe 881
+    824   Re-identification.InProceedingsoftheIEEE/CVFConferenceonComputerVision IEEE/CVFConferenceonComputerVisionandPatternRecognition(CVPR).5157– 882
+          andPatternRecognition(CVPR).11501–11510. arXiv:2012.04268doi:10.1109/ 5166.arXiv:1711.10295doi:10.1109/CVPR.2018.00541
+    825                                                                         883 
+          CVPR46437.2021.01134              [46] KaiyangZhou,YongxinYang,AndreaCavallaro,andTaoXiang.2019.Omni-
+    826 [41] XiangqunZhang,RuizeHan,LikaiWang,LinqiSong,JunhuiHou,andWeiFeng. Scale Feature Learning for Person Re-Identification. In Proceedings of the 884
+    827   2025.Synthetic-to-RealVideoPersonRe-ID.IEEETransactionsonInformation IEEE/CVF International Conference on Computer Vision (ICCV). 3701–3711. 885
+          ForensicsandSecurity20(2025),5438–5450.arXiv:2402.02108doi:10.1109/TIFS. arXiv:1905.00953[cs.CV]doi:10.1109/ICCV.2019.00380
+    828                                                                         886 
+    829                                                                         887 
+    830                                                                         888 
+    831                                                                         889 
+    832                                                                         890 
+    833                                                                         891 
+    834                                                                         892 
+    835                                                                         893 
+    836                                                                         894 
+    837                                                                         895 
+    838                                                                         896 
+    839                                                                         897 
+    840                                                                         898 
+    841                                                                         899 
+    842                                                                         900 
+    843                                                                         901 
+    844                                                                         902 
+    845                                                                         903 
+    846                                                                         904 
+    847                                                                         905 
+    848                                                                         906 
+    849                                                                         907 
+    850                                                                         908 
+    851                                                                         909 
+    852                                                                         910 
+    853                                                                         911 
+    854                                                                         912 
+    855                                                                         913 
+    856                                                                         914 
+    857                                                                         915 
+    858                                                                         916 
+    859                                                                         917 
+    860                                                                         918 
+    861                                                                         919 
+    862                                                                         920 
+    863                                                                         921 
+    864                                                                         922 
+    865                                                                         923 
+    866                                                                         924 
+    867                                                                         925 
+    868                                                                         926 
+    869                                                                         927 
+    870                                   8                                     928 

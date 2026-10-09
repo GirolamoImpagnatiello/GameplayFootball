@@ -293,10 +293,17 @@ void Referee::StartDebugOpenPlay() {
 
 void Referee::ForceDebugCorner(int attackingTeamID, const Vector3 &restartPos,
                                unsigned long prepareDelay_ms) {
+  ForceDebugRestart(e_SetPiece_Corner, attackingTeamID, restartPos,
+                    prepareDelay_ms);
+}
+
+void Referee::ForceDebugRestart(e_SetPiece setPiece, int restartingTeamID,
+                                const Vector3 &restartPos,
+                                unsigned long prepareDelay_ms) {
   match->StopPlay();
   match->StopSetPiece();
-  buffer.desiredSetPiece = e_SetPiece_Corner;
-  buffer.teamID = clamp(attackingTeamID, 0, 1);
+  buffer.desiredSetPiece = setPiece;
+  buffer.teamID = clamp(restartingTeamID, 0, 1);
   buffer.stopTime = match->GetActualTime_ms();
   buffer.prepareTime = buffer.stopTime + prepareDelay_ms;
   buffer.startTime = buffer.prepareTime + 2000;

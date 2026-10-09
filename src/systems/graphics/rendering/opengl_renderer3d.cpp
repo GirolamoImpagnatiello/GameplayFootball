@@ -31,6 +31,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <deque>
 #include <SDL2/SDL.h>
@@ -73,6 +74,7 @@ struct PixelWriteJob {
   float cameraFar;
   float outputNear;
   float outputFar;
+  std::string debugLabel;
 };
 
 std::deque<PixelWriteJob> asyncPixelWriteJobs;
@@ -81,10 +83,219 @@ bool asyncPixelWriterShutdown = false;
 bool asyncPixelWriterRunning = false;
 int asyncPixelWriterActiveJobs = 0;
 std::map<std::string, boost::shared_ptr<CaptureVideoWriter> > captureVideos;
+std::vector<unsigned char> latestSegmentationPixels;
+int latestSegmentationWidth = 0;
+int latestSegmentationHeight = 0;
+int latestSegmentationStride = 0;
+
+void DrawCaptureDebugLabel(std::vector<unsigned char> &pixels, int width, int height,
+                           int stride, const std::string &text) {
+  if (text.empty() || width <= 0 || height <= 0) return;
+  typedef std::array<unsigned char, 7> Glyph;
+  static const std::map<char, Glyph> glyphs = {
+    {' ', {{0,0,0,0,0,0,0}}}, {'#', {{10,31,10,10,31,10,0}}},
+    {'(', {{2,4,8,8,8,4,2}}}, {')', {{8,4,2,2,2,4,8}}},
+    {':', {{0,4,4,0,4,4,0}}}, {'-', {{0,0,0,31,0,0,0}}},
+    {'0', {{14,17,19,21,25,17,14}}}, {'1', {{4,12,4,4,4,4,14}}},
+    {'2', {{14,17,1,2,4,8,31}}}, {'3', {{30,1,1,14,1,1,30}}},
+    {'4', {{2,6,10,18,31,2,2}}}, {'5', {{31,16,16,30,1,1,30}}},
+    {'6', {{14,16,16,30,17,17,14}}}, {'7', {{31,1,2,4,8,8,8}}},
+    {'8', {{14,17,17,14,17,17,14}}}, {'9', {{14,17,17,15,1,1,14}}},
+    {'A', {{14,17,17,31,17,17,17}}}, {'B', {{30,17,17,30,17,17,30}}},
+    {'C', {{14,17,16,16,16,17,14}}}, {'D', {{30,17,17,17,17,17,30}}},
+    {'E', {{31,16,16,30,16,16,31}}}, {'F', {{31,16,16,30,16,16,16}}},
+    {'G', {{14,17,16,23,17,17,15}}}, {'H', {{17,17,17,31,17,17,17}}},
+    {'I', {{14,4,4,4,4,4,14}}}, {'J', {{7,2,2,2,2,18,12}}},
+    {'K', {{17,18,20,24,20,18,17}}}, {'L', {{16,16,16,16,16,16,31}}},
+    {'M', {{17,27,21,21,17,17,17}}}, {'N', {{17,25,21,19,17,17,17}}},
+    {'O', {{14,17,17,17,17,17,14}}}, {'P', {{30,17,17,30,16,16,16}}},
+    {'Q', {{14,17,17,17,21,18,13}}}, {'R', {{30,17,17,30,20,18,17}}},
+    {'S', {{15,16,16,14,1,1,30}}}, {'T', {{31,4,4,4,4,4,4}}},
+    {'U', {{17,17,17,17,17,17,14}}}, {'V', {{17,17,17,17,17,10,4}}},
+    {'W', {{17,17,17,21,21,21,10}}}, {'X', {{17,17,10,4,10,17,17}}},
+    {'Y', {{17,17,10,4,4,4,4}}}, {'Z', {{31,1,2,4,8,16,31}}},
+    {'_', {{0,0,0,0,0,0,31}}}
+  };
+
+  const int scale = 3;
+  const int glyphAdvance = 6 * scale;
+  const int padding = 6;
+  const int labelWidth = static_cast<int>(text.size()) * glyphAdvance - scale + padding * 2;
+  const int labelHeight = 7 * scale + padding * 2;
+  const int originX = std::max(0, width - labelWidth - 16);
+  const int originY = std::min(16, std::max(0, height - labelHeight));
+  const int endX = std::min(width, originX + labelWidth);
+  const int endY = std::min(height, originY + labelHeight);
+  for (int y = originY; y < endY; ++y) {
+    for (int x = originX; x < endX; ++x) {
+      unsigned char *pixel = &pixels[y * stride + x * 4];
+      pixel[0] = static_cast<unsigned char>(pixel[0] / 3);
+      pixel[1] = static_cast<unsigned char>(pixel[1] / 3);
+      pixel[2] = static_cast<unsigned char>(pixel[2] / 3);
+    }
+  }
+  for (std::size_t index = 0; index < text.size(); ++index) {
+    const char character = static_cast<char>(std::toupper(static_cast<unsigned char>(text[index])));
+    const std::map<char, Glyph>::const_iterator glyph = glyphs.find(character);
+    if (glyph == glyphs.end()) continue;
+    for (int row = 0; row < 7; ++row) {
+      for (int column = 0; column < 5; ++column) {
+        if ((glyph->second[row] & (1 << (4 - column))) == 0) continue;
+        for (int sy = 0; sy < scale; ++sy) {
+          for (int sx = 0; sx < scale; ++sx) {
+            const int x = originX + padding + static_cast<int>(index) * glyphAdvance + column * scale + sx;
+            const int y = originY + padding + row * scale + sy;
+            if (x < 0 || x >= width || y < 0 || y >= height) continue;
+            unsigned char *pixel = &pixels[y * stride + x * 4];
+            pixel[0] = pixel[1] = pixel[2] = pixel[3] = 255;
+          }
+        }
+      }
+    }
+  }
+}
+
+bool IsActorEdgeOutput(const std::vector<std::string> &filenames) {
+  if (filenames.empty()) return false;
+  std::string path = filenames.front();
+  std::replace(path.begin(), path.end(), '\\', '/');
+  return path.find("/edge/") != std::string::npos ||
+         path.find("control_edge.") != std::string::npos;
+}
+
+bool IsSegmentationOutput(const std::vector<std::string> &filenames) {
+  if (filenames.empty()) return false;
+  std::string path = filenames.front();
+  std::replace(path.begin(), path.end(), '\\', '/');
+  return path.find("/seg/") != std::string::npos ||
+         path.find("control_seg.") != std::string::npos;
+}
+
+bool IsRgbOutput(const std::vector<std::string> &filenames) {
+  if (filenames.empty()) return false;
+  std::string path = filenames.front();
+  std::replace(path.begin(), path.end(), '\\', '/');
+  return path.find("/rgb/") != std::string::npos ||
+         path.find("control_rgb.") != std::string::npos;
+}
+
+std::vector<std::string> EdgeFilenamesForRgb(const std::vector<std::string> &filenames) {
+  std::vector<std::string> result;
+  for (std::size_t i = 0; i < filenames.size(); ++i) {
+    std::string edge = filenames[i];
+    std::string::size_type position = edge.find("control_rgb.");
+    if (position != std::string::npos) {
+      edge.replace(position, 12, "control_edge.");
+      result.push_back(edge);
+      continue;
+    }
+    std::string normalized = edge;
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    position = normalized.find("/rgb/");
+    if (position != std::string::npos) {
+      edge.replace(position + 1, 3, "edge");
+      result.push_back(edge);
+    }
+  }
+  return result;
+}
+
+void ConvertActorImageToEdges(std::vector<unsigned char> &pixels, int width, int height,
+                              int stride, const std::vector<unsigned char> *maskPixels = 0,
+                              int maskStride = 0) {
+  std::vector<unsigned char> luminance(static_cast<std::size_t>(width) * height, 0);
+  std::vector<unsigned char> actorMask(static_cast<std::size_t>(width) * height, 0);
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const unsigned char *pixel = &pixels[y * stride + x * 4];
+      const unsigned char *maskPixel = maskPixels
+        ? &(*maskPixels)[y * maskStride + x * 4] : pixel;
+      actorMask[static_cast<std::size_t>(y) * width + x] =
+        (maskPixel[0] != 0 || maskPixel[1] != 0 || maskPixel[2] != 0) ? 1 : 0;
+      luminance[static_cast<std::size_t>(y) * width + x] = static_cast<unsigned char>(
+        (static_cast<unsigned int>(pixel[0]) * 54 +
+         static_cast<unsigned int>(pixel[1]) * 183 +
+         static_cast<unsigned int>(pixel[2]) * 19) >> 8);
+    }
+  }
+  const int threshold = std::max(1, std::min(255,
+    GetConfiguration()->GetInt("cosmos_actor_edge_threshold", 18)));
+  std::vector<unsigned char> edges(static_cast<std::size_t>(width) * height, 0);
+  for (int y = 1; y + 1 < height; ++y) {
+    for (int x = 1; x + 1 < width; ++x) {
+      const std::size_t p = static_cast<std::size_t>(y) * width + x;
+      const int gx = -luminance[p - width - 1] + luminance[p - width + 1]
+                     -2 * luminance[p - 1] + 2 * luminance[p + 1]
+                     -luminance[p + width - 1] + luminance[p + width + 1];
+      const int gy = -luminance[p - width - 1] - 2 * luminance[p - width] - luminance[p - width + 1]
+                     +luminance[p + width - 1] + 2 * luminance[p + width] + luminance[p + width + 1];
+      const int magnitude = std::min(255, std::abs(gx) + std::abs(gy));
+      bool silhouette = false;
+      for (int oy = -1; oy <= 1 && !silhouette; ++oy) {
+        for (int ox = -1; ox <= 1; ++ox) {
+          const std::size_t neighbor = static_cast<std::size_t>(y + oy) * width + (x + ox);
+          if (actorMask[p] != actorMask[neighbor]) {
+            silhouette = true;
+            break;
+          }
+        }
+      }
+      if (silhouette) {
+        // Preserve a complete, human-readable outline even when the kit has
+        // little local contrast. Luca's control keeps this outer silhouette.
+        edges[p] = 192;
+      } else if (actorMask[p] && magnitude >= threshold) {
+        // Internal clothing/body detail is useful, but keep it dimmer than the
+        // silhouette so texture seams do not dominate the control image.
+        edges[p] = static_cast<unsigned char>(std::max(72, std::min(160, magnitude)));
+      }
+    }
+  }
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      unsigned char *pixel = &pixels[y * stride + x * 4];
+      const unsigned char value = edges[static_cast<std::size_t>(y) * width + x];
+      pixel[0] = pixel[1] = pixel[2] = value;
+      pixel[3] = 255;
+    }
+  }
+}
+
+void WriteCapturePixels(const std::vector<std::string> &filenames,
+                        std::vector<unsigned char> &pixels,
+                        int width, int height, int stride) {
+  if (filenames.empty()) return;
+  SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(&pixels[0], width, height, 32,
+                                                            stride, SDL_PIXELFORMAT_RGBA32);
+  if (!surface) throw std::runtime_error("Could not create capture surface");
+  for (std::size_t i = 0; i < filenames.size(); ++i) {
+    const std::string &filename = filenames[i];
+    if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".mkv") {
+      auto &writer = captureVideos[filename];
+      if (!writer) {
+        const bool rgbStream = filename.size() >= 15 &&
+          filename.substr(filename.size() - 15) == "control_rgb.mkv";
+        const std::string codec = rgbStream
+          ? GetConfiguration()->Get("cosmos_rgb_video_codec", "h264") : "ffv1";
+        writer.reset(new CaptureVideoWriter(
+          GetConfiguration()->Get("cosmos_ffmpeg_path", "ffmpeg.exe"), filename,
+          width, height, GetConfiguration()->GetInt("cosmos_capture_fps", 25),
+          codec, GetConfiguration()->GetInt("cosmos_rgb_video_crf", 18)));
+      }
+      writer->Write(&pixels[0], width, height);
+    } else if (IMG_SavePNG(surface, filename.c_str()) != 0) {
+      SDL_FreeSurface(surface);
+      throw std::runtime_error("Could not save " + filename);
+    }
+  }
+  SDL_FreeSurface(surface);
+}
 
 void FinishCaptureVideos() {
   for (auto &entry : captureVideos) entry.second->Finish();
   captureVideos.clear();
+  latestSegmentationPixels.clear();
+  latestSegmentationWidth = latestSegmentationHeight = latestSegmentationStride = 0;
 }
 
 void ProcessPixelWriteJob(const PixelWriteJob &job) {
@@ -126,29 +337,39 @@ void ProcessPixelWriteJob(const PixelWriteJob &job) {
       const unsigned char *src = &(*job.source)[(job.height - y - 1) * job.stride];
       unsigned char *dst = &(*pixels)[y * job.stride];
       std::copy(src, src + job.stride, dst);
-      for (int x = 0; x < job.width; ++x) {
-        dst[x * 4 + 3] = 255;
-      }
     }
   }
 
-  SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(&(*pixels)[0], job.width, job.height, 32, job.stride, SDL_PIXELFORMAT_RGBA32);
-  if (!surface) throw std::runtime_error("Could not create capture surface");
-  if (surface) {
-    for (std::size_t i = 0; i < job.filenames.size(); ++i) {
-      const std::string &filename = job.filenames[i];
-      if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".mkv") {
-        auto &writer = captureVideos[filename];
-        if (!writer) writer.reset(new CaptureVideoWriter(
-          GetConfiguration()->Get("cosmos_ffmpeg_path", "ffmpeg.exe"), filename,
-          job.width, job.height, GetConfiguration()->GetInt("cosmos_capture_fps", 25)));
-        writer->Write(&(*pixels)[0], job.width, job.height);
-      } else if (IMG_SavePNG(surface, filename.c_str()) != 0) {
-        throw std::runtime_error("Could not save " + filename);
-      }
+  const bool actorEdgeOutput = !job.depth && IsActorEdgeOutput(job.filenames);
+  if (actorEdgeOutput) {
+    ConvertActorImageToEdges(*pixels, job.width, job.height, job.stride);
+  } else if (!job.depth) {
+    for (int y = 0; y < job.height; ++y) {
+      unsigned char *dst = &(*pixels)[y * job.stride];
+      for (int x = 0; x < job.width; ++x) dst[x * 4 + 3] = 255;
     }
-    SDL_FreeSurface(surface);
   }
+
+  if (!job.depth && IsSegmentationOutput(job.filenames)) {
+    latestSegmentationPixels = *pixels;
+    latestSegmentationWidth = job.width;
+    latestSegmentationHeight = job.height;
+    latestSegmentationStride = job.stride;
+  }
+
+  if (!job.depth && IsRgbOutput(job.filenames) &&
+      latestSegmentationWidth == job.width && latestSegmentationHeight == job.height) {
+    std::vector<std::string> edgeFilenames = EdgeFilenamesForRgb(job.filenames);
+    if (!edgeFilenames.empty()) {
+      std::vector<unsigned char> edgePixels = *pixels;
+      ConvertActorImageToEdges(edgePixels, job.width, job.height, job.stride,
+                               &latestSegmentationPixels, latestSegmentationStride);
+      WriteCapturePixels(edgeFilenames, edgePixels, job.width, job.height, job.stride);
+    }
+  }
+
+  if (!job.depth) DrawCaptureDebugLabel(*pixels, job.width, job.height, job.stride, job.debugLabel);
+  WriteCapturePixels(job.filenames, *pixels, job.width, job.height, job.stride);
 }
 
 void PixelWriterThreadMain() {
@@ -274,6 +495,7 @@ struct AsyncPixelRead {
   float cameraFar;
   float outputNear;
   float outputFar;
+  std::string debugLabel;
   unsigned int readyFrame;
 };
 
@@ -314,6 +536,7 @@ bool DispatchAsyncPixelRead(const AsyncPixelRead &read) {
   job.cameraFar = read.cameraFar;
   job.outputNear = read.outputNear;
   job.outputFar = read.outputFar;
+  job.debugLabel = read.debugLabel;
   EnqueuePixelWriteJob(job);
   return true;
 }
@@ -343,13 +566,14 @@ void ServiceAsyncPixelReads(bool force, int maxDispatches = 0) {
 
 bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, int height, GLenum format, GLenum type, bool depth,
                          bool metricDepth = false, float cameraNear = 0.0f, float cameraFar = 1.0f,
-                         float outputNear = 0.0f, float outputFar = 1.0f) {
+                         float outputNear = 0.0f, float outputFar = 1.0f,
+                         const std::string &debugLabel = "") {
   if (filenames.empty()) return false;
   if (width <= 0 || height <= 0) return false;
 
   // Bound GPU staging memory too; frame latency alone is not a memory limit.
   // A forced drain may wait for the GPU/PNG writer, but preserves every sample.
-  if (asyncPixelReads.size() >= 3) ServiceAsyncPixelReads(true);
+  if (asyncPixelReads.size() >= 4) ServiceAsyncPixelReads(true);
 
   AsyncPixelRead read;
   read.filenames = filenames;
@@ -365,6 +589,7 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
   read.cameraFar = cameraFar;
   read.outputNear = outputNear;
   read.outputFar = outputFar;
+  read.debugLabel = debugLabel;
   read.readyFrame = asyncPixelReadFrame + asyncPixelReadLatencyFrames;
 
   mapping.glGenBuffers(1, &read.pbo);
@@ -395,13 +620,12 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
 
   void OpenGLRenderer3D::SwapBuffers() {
     asyncPixelReadFrame++;
-    // A Cosmos sample queues three independent GPU readbacks: RGB, depth and
-    // semantic segmentation. Draining only one readback per rendered frame
-    // makes two PBOs accumulate every frame until the 32-bit process runs out
-    // of address space. Drain at the same rate at which Cosmos produces them.
+    // A Luca-compatible sample queues four independent GPU readbacks: RGB,
+    // depth, instance segmentation and actor-only edge input. Drain at the
+    // same rate at which Cosmos produces them.
     // This is deliberately non-blocking: reads that have not reached their
     // configured GPU latency remain queued for a later frame.
-    ServiceAsyncPixelReads(false, 3);
+    ServiceAsyncPixelReads(false, 4);
     SDL_GL_SwapWindow(window);
   }
 
@@ -844,6 +1068,7 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
     LoadShader("ambient", "media/shaders/ambient");
     LoadShader("zphase", "media/shaders/zphase");
     LoadShader("semantic", "media/shaders/semantic");
+    LoadShader("actor", "media/shaders/actor");
     LoadShader("postprocess", "media/shaders/postprocess");
     LoadShader("overlay", "media/shaders/overlay");
 
@@ -1517,15 +1742,15 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
       //glMultMatrixf((float*)transform.elements);
       SetMatrix("modelMatrix", transform);
       if (renderMode == e_RenderMode_Semantic) {
-        SetUniformFloat3("semantic", "semanticColor", queueEntry->semanticColor.coords[0], queueEntry->semanticColor.coords[1], queueEntry->semanticColor.coords[2]);
-        const bool isPitchSurface = queueEntry->semanticColor.coords[0] == 0.10f &&
-                                    queueEntry->semanticColor.coords[1] == 0.65f &&
-                                    queueEntry->semanticColor.coords[2] == 0.18f;
-        const bool isCrowdSurface = queueEntry->semanticColor.coords[0] == 128.0f / 255.0f &&
+        SetUniformFloat3(currentShader->first, "semanticColor", queueEntry->semanticColor.coords[0], queueEntry->semanticColor.coords[1], queueEntry->semanticColor.coords[2]);
+        const bool isPitchSurface = queueEntry->semanticColor.coords[0] == 0.0f &&
+                                    queueEntry->semanticColor.coords[1] == 140.0f / 255.0f &&
+                                    queueEntry->semanticColor.coords[2] == 40.0f / 255.0f;
+        const bool isCrowdSurface = queueEntry->semanticColor.coords[0] == 160.0f / 255.0f &&
                                     queueEntry->semanticColor.coords[1] == 0.0f &&
-                                    queueEntry->semanticColor.coords[2] == 128.0f / 255.0f;
-        SetUniformInt("semantic", "isPitchSurface", isPitchSurface ? 1 : 0);
-        SetUniformInt("semantic", "isCrowdSurface", isCrowdSurface ? 1 : 0);
+                                    queueEntry->semanticColor.coords[2] == 200.0f / 255.0f;
+        SetUniformInt(currentShader->first, "isPitchSurface", isPitchSurface ? 1 : 0);
+        SetUniformInt(currentShader->first, "isCrowdSurface", isCrowdSurface ? 1 : 0);
       }
 
       bool sequential = true; // buffer vertexbuffer chunks until a change happens (in texture or index, for example)
@@ -1554,11 +1779,11 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
             sequential = false;
           }
           currentSemanticColor = vbIndex->semanticColor;
-          SetUniformFloat3("semantic", "semanticColor", currentSemanticColor.coords[0], currentSemanticColor.coords[1], currentSemanticColor.coords[2]);
-          const bool isCrowdSurface = currentSemanticColor.coords[0] == 128.0f / 255.0f &&
+          SetUniformFloat3(currentShader->first, "semanticColor", currentSemanticColor.coords[0], currentSemanticColor.coords[1], currentSemanticColor.coords[2]);
+          const bool isCrowdSurface = currentSemanticColor.coords[0] == 160.0f / 255.0f &&
                                       currentSemanticColor.coords[1] == 0.0f &&
-                                      currentSemanticColor.coords[2] == 128.0f / 255.0f;
-          SetUniformInt("semantic", "isCrowdSurface", isCrowdSurface ? 1 : 0);
+                                      currentSemanticColor.coords[2] == 200.0f / 255.0f;
+          SetUniformInt(currentShader->first, "isCrowdSurface", isCrowdSurface ? 1 : 0);
         }
 
         if (renderMode != e_RenderMode_GeometryOnly) {
@@ -2184,12 +2409,18 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
   }
 
   bool OpenGLRenderer3D::SaveBackBuffer(const std::vector<std::string> &filenames) {
+    return SaveBackBuffer(filenames, "");
+  }
+
+  bool OpenGLRenderer3D::SaveBackBuffer(const std::vector<std::string> &filenames,
+                                        const std::string &debugLabel) {
     if (!contextIsActive) return false;
     if (context_width <= 0 || context_height <= 0) return false;
 
     glReadBuffer(GL_BACK);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    return QueueAsyncPixelRead(filenames, context_width, context_height, GL_RGBA, GL_UNSIGNED_BYTE, false);
+    return QueueAsyncPixelRead(filenames, context_width, context_height, GL_RGBA, GL_UNSIGNED_BYTE,
+                               false, false, 0.0f, 1.0f, 0.0f, 1.0f, debugLabel);
   }
 
   bool OpenGLRenderer3D::SaveDepthBuffer(const std::string &filename, int width, int height, float cameraNear, float cameraFar) {

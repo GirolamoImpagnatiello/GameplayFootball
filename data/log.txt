@@ -118,3 +118,35 @@
 [Notice] in [Match::Match]: Done creating match!
 [Notice] in [OpenGLRenderer3D::CheckFrameBufferStatus]: Framebuffer state #36053
 [Notice] in [OpenGLRenderer3D::CheckFrameBufferStatus]: Framebuffer state #36053
+[Notice] in [OpenGLRenderer3D::DeleteView]: Deleting view, id 1
+[Notice] in [blunted::Exit]: exiting scenemanager
+[Notice] in [blunted::Exit]: exiting resourcemanagerpool
+[Notice] in [blunted::Exit]: deleting resourcemanagerpool
+[Notice] in [blunted::Exit]: exiting systemmanager
+[Notice] in [SystemManager::Exit]: Deleting system named 'AudioSystem'
+[Notice] in [OpenALRenderer::operator()()]: Shutting down OpenALRenderer thread
+[Notice] in [SystemManager::Exit]: Deleting system named 'GraphicsSystem'
+[Notice] in [GraphicsTask::operator()()]: Shutting down GraphicsSystemTask thread
+[Notice] in [OpenGLRenderer3D::operator()()]: Shutting down OpenGLRenderer3D thread
+[Notice] in [blunted::Exit]: destroying systemmanager
+[Notice] in [blunted::Exit]: exiting taskmanager
+[Notice] in [WorkerThread::operator()()]: Exiting worker thread
+[Notice] in [WorkerThread::operator()()]: Exiting worker thread
+[Notice] in [WorkerThread::operator()()]: Exiting worker thread
+[Notice] in [WorkerThread::operator()()]: Exiting worker thread
+[Notice] in [WorkerThread::operator()()]: Exiting worker thread
+[Notice] in [WorkerThread::operator()()]: Exiting worker thread
+[Notice] in [WorkerThread::operator()()]: Exiting worker thread
+[Notice] in [WorkerThread::operator()()]: Exiting worker thread
+[Notice] in [WorkerThread::~WorkerThread]: 22886 messages handled
+[Notice] in [WorkerThread::~WorkerThread]: 21407 messages handled
+[Notice] in [WorkerThread::~WorkerThread]: 22044 messages handled
+[Notice] in [WorkerThread::~WorkerThread]: 24098 messages handled
+[Notice] in [WorkerThread::~WorkerThread]: 23239 messages handled
+[Notice] in [WorkerThread::~WorkerThread]: 21823 messages handled
+[Notice] in [WorkerThread::~WorkerThread]: 22133 messages handled
+[Notice] in [WorkerThread::~WorkerThread]: 24097 messages handled
+[Notice] in [blunted::Exit]: destroying taskmanager
+[Notice] in [blunted::Exit]: destroying scenemanager
+[Notice] in [blunted::Exit]: exiting usereventmanager
+[Notice] in [blunted::Exit]: destroying usereventmanager

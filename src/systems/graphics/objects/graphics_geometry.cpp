@@ -17,6 +17,8 @@
 
 #include "graphics_geometry.hpp"
 
+#include "main.hpp"
+
 #include "managers/resourcemanagerpool.hpp"
 
 #include "../graphics_scene.hpp"
@@ -26,6 +28,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 
 namespace blunted {
 
@@ -40,46 +43,73 @@ namespace blunted {
       return haystack.find(needle) != std::string::npos;
     }
 
+    Vector3 InstanceColor(unsigned int id) {
+      // High-contrast fixed palette used as a persistent instance identifier.
+      // Index zero is deliberately avoided because black is the background.
+      static const unsigned char palette[][3] = {
+        {255, 0, 128}, {128, 255, 0}, {96, 128, 255}, {255, 128, 32},
+        {0, 224, 224}, {224, 192, 255}, {176, 96, 255}, {255, 224, 96},
+        {64, 192, 96}, {255, 96, 96}, {96, 255, 192}, {192, 160, 96},
+        {128, 96, 64}, {64, 128, 160}, {224, 96, 192}, {160, 224, 96},
+        {96, 160, 224}, {224, 160, 160}, {160, 160, 224}, {224, 224, 160},
+        {96, 224, 128}, {192, 96, 64}, {128, 224, 255}, {224, 128, 255},
+        {160, 192, 128}, {128, 128, 192}, {192, 128, 128}, {96, 192, 192},
+        {192, 192, 96}, {160, 96, 128}, {128, 192, 160}, {192, 160, 224}
+      };
+      const unsigned char *rgb = palette[id % (sizeof(palette) / sizeof(palette[0]))];
+      return Vector3(rgb[0] / 255.0f, rgb[1] / 255.0f, rgb[2] / 255.0f);
+    }
+
     Vector3 DetermineSemanticColor(boost::intrusive_ptr<Geometry> geometry) {
       if (geometry->PropertyExists("capture_class")) {
         const std::string label = geometry->GetProperty("capture_class");
-        if (label == "home") return Vector3(0, 0, 1);
-        if (label == "away") return Vector3(1, 0, 0);
-        if (label == "home_goalkeeper") return Vector3(128.0f / 255.0f, 160.0f / 255.0f, 1.0f);
-        if (label == "away_goalkeeper") return Vector3(0, 64.0f / 255.0f, 0);
-        if (label == "official") return Vector3(0, 1, 1);
-        if (label == "advertising_board") return Vector3(1.0f, 128.0f / 255.0f, 0);
-        if (label == "stadium_barrier_or_wall") return Vector3(0, 128.0f / 255.0f, 128.0f / 255.0f);
-        if (label == "crowd") return Vector3(128.0f / 255.0f, 0, 128.0f / 255.0f);
-        if (label == "stands_structure") return Vector3(160.0f / 255.0f, 96.0f / 255.0f, 48.0f / 255.0f);
+        if (label.find("instance:") == 0) {
+          return InstanceColor(static_cast<unsigned int>(std::strtoul(label.c_str() + 9, 0, 10)));
+        }
+        if (label == "home") return Vector3(8.0f / 255.0f, 18.0f / 255.0f, 40.0f / 255.0f);
+        if (label == "away") return Vector3(1.0f, 166.0f / 255.0f, 213.0f / 255.0f);
+        if (label == "home_goalkeeper") return Vector3(1.0f, 128.0f / 255.0f, 0);
+        if (label == "away_goalkeeper") return Vector3(0, 220.0f / 255.0f, 1.0f);
+        if (label == "official") return Vector3(220.0f / 255.0f, 1.0f, 0);
+        if (label == "advertising_board") return Vector3(50.0f / 255.0f, 50.0f / 255.0f, 1.0f);
+        if (label == "stadium_barrier_or_wall") return Vector3(0, 180.0f / 255.0f, 160.0f / 255.0f);
+        if (label == "crowd") return Vector3(160.0f / 255.0f, 0, 200.0f / 255.0f);
+        if (label == "stands_structure") return Vector3(1.0f, 190.0f / 255.0f, 80.0f / 255.0f);
+      }
+      if (GetConfiguration()->Get("cosmos_control_profile", "semantic") == "luca_instance") {
+        return Vector3(0, 0, 0);
       }
       std::string source = LowerString(geometry->GetName());
       if (geometry->GetGeometryData()) source += " " + LowerString(geometry->GetGeometryData()->GetIdentString());
 
-      if (Contains(source, "pitch") || Contains(source, "grass") || Contains(source, "floor")) return Vector3(0.10f, 0.65f, 0.18f);
+      if (Contains(source, "pitch") || Contains(source, "grass") || Contains(source, "floor")) return Vector3(0, 140.0f / 255.0f, 40.0f / 255.0f);
       if (Contains(source, "fullbody") || Contains(source, "player") || Contains(source, "official") || Contains(source, "referee") || Contains(source, "linesman")) return Vector3(0.12f, 0.35f, 0.95f);
-      if (Contains(source, "ball")) return Vector3(1.00f, 0.95f, 0.18f);
-      if (Contains(source, "goal") || Contains(source, "net") || Contains(source, "post")) return Vector3(0.85f, 0.85f, 0.85f);
-      if (Contains(source, "adboard") || Contains(source, "stadium") || Contains(source, "crowd")) return Vector3(0.55f, 0.45f, 0.75f);
+      if (Contains(source, "ball")) return Vector3(1.0f, 0, 0);
+      if (Contains(source, "goal") || Contains(source, "net") || Contains(source, "post")) return Vector3(101.0f / 255.0f, 117.0f / 255.0f, 139.0f / 255.0f);
+      if (Contains(source, "adboard") || Contains(source, "stadium") || Contains(source, "crowd")) return Vector3(160.0f / 255.0f, 0, 200.0f / 255.0f);
       if (Contains(source, "card")) return Vector3(1.00f, 0.55f, 0.05f);
 
-      return Vector3(0.45f, 0.45f, 0.45f);
+      return Vector3(128.0f / 255.0f, 128.0f / 255.0f, 128.0f / 255.0f);
     }
 
     Vector3 DetermineMeshSemanticColor(boost::intrusive_ptr<Geometry> geometry, const Material &material) {
+      if (GetConfiguration()->Get("cosmos_control_profile", "semantic") == "luca_instance") {
+        return DetermineSemanticColor(geometry);
+      }
       if (!geometry->PropertyExists("capture_stadium_materials")) return DetermineSemanticColor(geometry);
-      if (!material.diffuseTexture) return Vector3(160.0f / 255.0f, 96.0f / 255.0f, 48.0f / 255.0f);
+      if (!material.diffuseTexture) return Vector3(1.0f, 190.0f / 255.0f, 80.0f / 255.0f);
       const std::string texture = LowerString(material.diffuseTexture->GetIdentString());
-      if (texture.find("ad_") == 0 || texture == "abstractads.png") return Vector3(1.0f, 128.0f / 255.0f, 0);
-      if (texture == "crowd01.png") return Vector3(128.0f / 255.0f, 0, 128.0f / 255.0f);
-      if (texture == "floor01wall.png" || texture == "floor02wall.png" || texture == "hekje.png") return Vector3(0, 128.0f / 255.0f, 128.0f / 255.0f);
-      return Vector3(160.0f / 255.0f, 96.0f / 255.0f, 48.0f / 255.0f);
+      if (texture.find("ad_") == 0 || texture == "abstractads.png") return Vector3(50.0f / 255.0f, 50.0f / 255.0f, 1.0f);
+      if (texture == "crowd01.png" || texture == "crowd02.png" || texture == "crowd03.png")
+        return Vector3(160.0f / 255.0f, 0, 200.0f / 255.0f);
+      if (texture == "floor01wall.png" || texture == "floor02wall.png" || texture == "hekje.png") return Vector3(0, 180.0f / 255.0f, 160.0f / 255.0f);
+      return Vector3(1.0f, 190.0f / 255.0f, 80.0f / 255.0f);
     }
 
   }
 
   GraphicsGeometry::GraphicsGeometry(GraphicsScene *graphicsScene) : GraphicsObject(graphicsScene) {
-    semanticColor = Vector3(0.45f, 0.45f, 0.45f);
+    semanticColor = Vector3(128.0f / 255.0f, 128.0f / 255.0f, 128.0f / 255.0f);
   }
 
   GraphicsGeometry::~GraphicsGeometry() {

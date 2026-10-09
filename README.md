@@ -155,7 +155,7 @@ camera changes are hard cuts; pan, tilt, and FOV remain smooth within a shot.
 "camera_max_cuts_per_clip" "1"
 ```
 
-Available presets are `MAIN_BROADCAST`, `HIGH_WIDE`, `HIGH_GOAL_SIDE`,
+Available presets are `MAIN_BROADCAST`, `HIGH_WIDE`, `COSMOS_WIDE`, `FULL_FIELD_DEBUG`, `FULL_FIELD_PANORAMIC`, `HIGH_GOAL_SIDE`,
 `LOW_TOUCHLINE`, `LOW_GOAL_SIDE`, `CORNER`, `BEHIND_GOAL`, and the optional
 `CLOSE_UP`. Set `camera_mode=procedural` and `single_camera=false` for weighted,
 context-aware, seed-reproducible selection. Each weight can be overridden with
@@ -163,6 +163,47 @@ context-aware, seed-reproducible selection. Each weight can be overridden with
 `camera_<PRESET>_max_shot_s`, and the base FOV uses
 `camera_<PRESET>_fov`. `camera_close_up_enabled` defaults to false and close-ups
 are eligible only while play is stopped.
+
+`COSMOS_WIDE` is calibrated against the lateral main-broadcast framing in the
+SoccerNet Barcelona-Manchester City 2016/17 reference. It uses the same mount,
+zoom envelope, and action tracking as `MAIN_BROADCAST`, while remaining a
+continuous single-camera shot for Cosmos tests. It intentionally does not
+guarantee that both goals or all 22 players remain visible at once.
+
+The team-aware semantic palette uses dark navy `[8,18,40]` for home outfield
+players, light pink `[255,166,213]` for away outfield players, orange
+`[255,128,0]` and cyan `[0,220,255]` for the two goalkeepers, and fluorescent
+yellow `[220,255,0]` for officials. Pitch, ball, goal, and residual objects use
+`[0,140,40]`, `[255,0,0]`, `[101,117,139]`, and `[128,128,128]` respectively.
+
+For Cosmos temporal-coherence diagnostics, select the fixed full-pitch camera:
+
+```text
+"camera_mode" "single"
+"camera_single_preset" "FULL_FIELD_DEBUG"
+"single_camera" "true"
+"camera_changes" "false"
+```
+
+`FULL_FIELD_DEBUG` is a fixed lateral wide shot from the halfway line, about
+76 metres from the pitch centre and 32 metres high, with a fixed 68 degree FOV.
+It is aimed slightly towards the near half so the playing surface uses more of
+the image and less space is spent on the opposite stand. It retains the
+perspective of the main broadcast camera but never pans, tracks or zooms,
+keeping the complete playing area and all on-field actors visible from the
+first frame to the last.
+
+`FULL_FIELD_PANORAMIC` preserves the original, more distant stadium-wide
+composition shown in the camera experiment. Select any of these views through
+`camera_single_preset`; no code change is required.
+
+Direct capture supports native `720p` (1280x720), `1080p` (1920x1080), and
+`4k` (3840x2160) framebuffer presets through `cosmos_capture_resolution`.
+The selected dimensions apply identically to RGB, depth, and segmentation and
+are written to `metadata.json`. `cosmos_model_resolution` remains independent:
+high-resolution masters can therefore be retained while a 720-tier Cosmos
+checkpoint still receives its supported size. The 4K mode is experimental in
+the 32-bit build and has substantially higher memory, encoder, and disk costs.
 
 Cosmos captures also write `camera_metadata.jsonl`, one record per rendered
 frame, with timestamp, preset, physical camera id, position, quaternion, and
@@ -191,8 +232,10 @@ To build the three MP4 control videos after capture:
 
 ### Direct lossless video capture (Windows)
 
-The tested video profile records three synchronized FFV1/Matroska masters:
-`control_rgb.mkv`, `control_depth.mkv`, and `control_seg.mkv`. FFmpeg receives
+The tested video profile records three synchronized Matroska streams:
+`control_rgb.mkv`, `control_depth.mkv`, and `control_seg.mkv`. By default RGB
+uses high-quality H.264 (CRF 18), while depth and segmentation remain FFV1
+lossless so compression cannot alter depth values or semantic colors. FFmpeg receives
 raw frames through bounded pipes; physics/render timing is unchanged from the
 lockstep PNG mode. The videos carry 25 frames per **simulation** second even
 when recording runs slower than real time. The depth mapping remains the same
@@ -204,6 +247,8 @@ when recording runs slower than real time. The depth mapping remains the same
 "cosmos_capture_lockstep" "true"
 "cosmos_capture_fps" "25"
 "cosmos_capture_frame_count" "0"
+"cosmos_rgb_video_codec" "h264"
+"cosmos_rgb_video_crf" "18"
 "cosmos_segmentation_team_aware" "true"
 "cosmos_ffmpeg_path" "ffmpeg.exe"
 "dataset_export_enabled" "true"
@@ -215,8 +260,10 @@ limit produces a short capture. `cosmos_capture_quit_when_complete=true` exits
 cleanly after a positive frame limit, for smoke tests. Quit normally to finalize
 the encoder streams; forced process termination can leave incomplete captures.
 FFmpeg failures are logged and abort the run rather than marking it complete.
-FFV1 is lossless but produces large masters: this mode targets capture speed and
-label preservation, not minimum disk space.
+Set `cosmos_rgb_video_codec` to `h265` for smaller RGB files at higher encoding
+cost, or to `ffv1` to restore a fully lossless RGB master. For H.264/H.265, a
+lower CRF increases quality and file size. Depth and segmentation always use
+FFV1, independently of this setting.
 
 Team-aware colors are assigned from simulation identity, independent of kits or
 field side: home `[0,0,255]`, away `[255,0,0]`, officials `[0,255,255]`.
@@ -351,7 +398,7 @@ balls out of play and the full-time summary are exported as their canonical
 SoccerReplay-1988 labels as well.
 
 The segmentation control video labels visible painted field markings as
-`field_lines` in magenta `[255,0,255]`. This includes the touchlines, goal
+`field_lines` in white `[255,255,255]`. This includes the touchlines, goal
 lines, halfway line, center circle, penalty and goal areas, penalty arcs,
 corner arcs, and spots already present in the pitch texture. The markings
 are classified only on the pitch surface, so players and the ball retain
@@ -359,16 +406,30 @@ their existing labels when they occlude a line. `metadata.json` records the
 new color in `semantic_palette`.
 
 `cosmos_segmentation_v2=true` also labels stadium submeshes by material during
-the semantic render pass: advertising boards `[255,128,0]`, barriers and walls
-`[0,128,128]`, crowd-textured seating `[128,0,128]`, and stands structure
-`[160,96,48]`. Existing team, official, ball, pitch, and field-line colors are
-unchanged. The crowd class follows the stadium's crowd-textured meshes; it
+the semantic render pass: advertising boards `[50,50,255]`, barriers and walls
+`[0,180,160]`, crowd-textured seating `[160,0,200]`, empty seats `[50,50,50]`,
+and stands structure `[255,190,80]`. The crowd class follows the stadium's crowd-textured meshes; it
 does not distinguish individual spectators. `metadata.json` includes
 `segmentation_version` and the full palette. Set the option to `false` to
 export the original single-color stadium mask for an A/B comparison with the
 same seed. `cosmos_capture_prompt` controls the caption written to `prompt.json`;
 event-specific captures can override it in their own config file. Keep the
 lossless MKV segmentation master when exact palette values matter.
+
+For experiments matching Luca's SportsMOT controls, set
+`cosmos_control_profile=luca_instance`. In this profile the segmentation has a
+black background and contains only players, goalkeepers and officials. Every
+actor receives a fixed high-contrast color derived from its simulation ID, so
+the same subject retains the same color throughout the capture. The field,
+lines, ball, goals and stadium are omitted from this mask. The capture also
+writes `control_edge.mkv`: it renders only the actors with their original
+textures on black and applies a low-threshold Sobel pass, preserving silhouette
+and kit details without constraining the synthetic pitch or stadium. Adjust the
+threshold with `cosmos_actor_edge_threshold` (default `18`). Depth remains a
+complete scene control. `cosmos_transfer_spec.json` automatically adds the edge
+input with `preset_edge_threshold=low`, and `metadata.json` records profile,
+instance encoding and edge encoding. Use `cosmos_control_profile=semantic` to
+retain the full semantic palette described above.
 
 Depth capture defaults to a global metric mapping. The renderer reconstructs
 camera-space Z from the OpenGL depth buffer using each frame's projection near

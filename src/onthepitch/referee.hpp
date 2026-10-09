@@ -50,6 +50,9 @@ class Referee {
     // Deterministic broadcast test helpers. These are only used when the
     // corresponding debug scenario is enabled in the configuration.
     void StartDebugOpenPlay();
+    void ForceDebugRestart(e_SetPiece setPiece, int restartingTeamID,
+                           const Vector3 &restartPos,
+                           unsigned long prepareDelay_ms);
     void ForceDebugCorner(int attackingTeamID, const Vector3 &restartPos,
                           unsigned long prepareDelay_ms);
 

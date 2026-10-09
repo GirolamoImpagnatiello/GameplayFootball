@@ -21,6 +21,8 @@ namespace blunted {
     float postContrast;
     float postSaturation;
     float stadiumLightIntensity;
+    float rainIntensity;
+    float wetPitch;
   };
 
   inline EnvironmentProfile GetEnvironmentProfile(const Properties &configuration) {
@@ -40,11 +42,15 @@ namespace blunted {
     profile.ambientBrightness = 0.15f;
     profile.ambientDesaturation = 0.7f;
     profile.pitchAmbientScale = 0.65f;
-    profile.fogDensity = 1.0f;
+    // Depth fog is reserved for the cloudy lighting profile. Clear daytime,
+    // sunset and night matches keep distant geometry fully crisp.
+    profile.fogDensity = 0.0f;
     profile.postBrightness = 1.0f;
     profile.postContrast = 0.3f;
     profile.postSaturation = 0.95f;
     profile.stadiumLightIntensity = 0.0f;
+    profile.rainIntensity = 0.0f;
+    profile.wetPitch = 0.0f;
 
     if (mode == "sunset") {
       profile.sunPosition = Vector3(-1.25f, 0.35f, 0.22f);
@@ -55,7 +61,7 @@ namespace blunted {
       profile.ambientBrightness = 0.17f;
       profile.ambientDesaturation = 0.35f;
       profile.pitchAmbientScale = 0.43f;
-      profile.fogDensity = 0.9f;
+      profile.fogDensity = 0.0f;
       profile.postBrightness = 0.96f;
       profile.postContrast = 0.26f;
       profile.postSaturation = 1.02f;
@@ -85,11 +91,26 @@ namespace blunted {
       profile.ambientBrightness = 0.035f;
       profile.ambientDesaturation = 0.28f;
       profile.pitchAmbientScale = 0.28f;
-      profile.fogDensity = 0.55f;
+      profile.fogDensity = 0.0f;
       profile.postBrightness = 1.08f;
       profile.postContrast = 0.27f;
       profile.postSaturation = 0.96f;
       profile.stadiumLightIntensity = 0.40f;
+    }
+
+    const std::string weather = configuration.Get("match_weather", "clear");
+    if (weather == "rain") {
+      // Rain is independent from the time-of-day profile: cooler air, denser
+      // haze, animated precipitation and a darker/more reflective pitch.
+      profile.rainIntensity = 0.54f;
+      profile.wetPitch = 0.78f;
+      profile.fogDensity *= 1.28f;
+      profile.postBrightness *= 0.96f;
+      profile.postSaturation *= 0.88f;
+      profile.ambientTint = Vector3(
+        profile.ambientTint.coords[0] * 0.90f,
+        profile.ambientTint.coords[1] * 0.95f,
+        profile.ambientTint.coords[2] * 1.04f);
     }
 
     return profile;

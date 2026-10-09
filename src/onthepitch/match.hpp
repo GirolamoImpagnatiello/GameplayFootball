@@ -278,6 +278,7 @@ class Match {
 
     void PrepareGoalNetting();
     void UpdateGoalNetting(bool ballTouchesNet = false);
+    void PrepareRain();
 
     // for stuff like animation smoothing, we could need the time elapsed since last Put() and such
     unsigned long previousProcessTime_ms;
@@ -300,6 +301,7 @@ class Match {
     boost::intrusive_ptr<Node> sunNode;
     boost::intrusive_ptr<Node> stadiumFloodlightNode;
     std::vector<boost::intrusive_ptr<Light> > stadiumLights;
+    boost::intrusive_ptr<Node> rainNode;
 
     boost::intrusive_ptr<Node> stadiumNode;
     boost::intrusive_ptr<Node> goalsNode;
@@ -325,6 +327,21 @@ class Match {
     void ProcessDebugSaveCornerSequence();
     void ApplyDebugSaveCornerCamera();
 
+    struct CameraScenarioEvent {
+      unsigned long time_ms;
+      unsigned int line;
+      std::string command;
+      std::vector<std::string> arguments;
+    };
+    void LoadCameraScenario();
+    void ProcessCameraScenario();
+    void ExecuteCameraScenarioEvent(const CameraScenarioEvent &event);
+    bool debugCameraScenarioEnabled;
+    bool debugCameraScenarioStarted;
+    unsigned long debugCameraScenarioStart_ms;
+    std::size_t debugCameraScenarioNextEvent;
+    std::vector<CameraScenarioEvent> debugCameraScenarioEvents;
+
     boost::shared_ptr<AnimCollection> anims;
 
     const std::vector<IHIDevice*> &controllers;
@@ -337,6 +354,8 @@ class Match {
     Gui2Radar *radar;
     Gui2TacticsDebug *tacticsDebug;
     Gui2Caption *messageCaption;
+    Gui2Caption *cameraDebugCaption;
+    bool cameraDebugOverlayEnabled;
     unsigned long messageCaptionRemoveTime_ms;
 
     mutable Lockable<unsigned long> iterations;
@@ -402,6 +421,7 @@ class Match {
     std::string cosmosRgbDirectory;
     std::string cosmosDepthDirectory;
     std::string cosmosSegmentationDirectory;
+    std::string cosmosEdgeDirectory;
     std::ofstream cosmosCameraMetadataFile;
 
     // camera

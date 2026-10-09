@@ -1211,7 +1211,7 @@
 			*MAP_CLASS "Bitmap"
 			*MAP_SUBNO 1
 			*MAP_AMOUNT 1.000
-			*BITMAP "media/textures/stadium/crowd01.png"
+			*BITMAP "media/textures/stadium/crowd03.png"
 			*MAP_TYPE Shrinkwrap
 			*UVW_U_OFFSET 0.000
 			*UVW_V_OFFSET 0.000
@@ -1231,7 +1231,7 @@
 			*MAP_CLASS "Bitmap"
 			*MAP_SUBNO 6
 			*MAP_AMOUNT 1.000
-			*BITMAP "media/textures/stadium/crowd01.png"
+			*BITMAP "media/textures/stadium/crowd03.png"
 			*MAP_TYPE Shrinkwrap
 			*UVW_U_OFFSET 0.000
 			*UVW_V_OFFSET 0.000
@@ -1251,7 +1251,7 @@
 			*MAP_CLASS "Bitmap"
 			*MAP_SUBNO 8
 			*MAP_AMOUNT 0.300
-			*BITMAP "media/textures/stadium/crowd01_normal.png"
+			*BITMAP "media/textures/stadium/crowd03_normal.png"
 			*MAP_TYPE Screen
 			*UVW_U_OFFSET 0.000
 			*UVW_V_OFFSET 0.000

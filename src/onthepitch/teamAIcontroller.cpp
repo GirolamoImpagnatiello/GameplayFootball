@@ -762,6 +762,15 @@ void TeamAIController::PrepareSetPiece(e_SetPiece setPiece, int takerTeamID) {
         lowYBound = -pitchHalfH * 0.6;
         highYBound = pitchHalfH * 0.6;
         Vector3 basePos = AI_GetAdaptedFormationPosition(match, players.at(i), backXBound, frontXBound, lowYBound, highYBound, xFocus, xFocusStrength, yFocus, yFocusStrength, Vector3(ballPos.coords[0] * 0.95f, ballPos.coords[1] * 0.1f, 0), 0.9, midfieldFocus, midfieldFocusStrength, false);
+        // Opponents must remain 9.15 m from the corner ball. Without this
+        // constraint they could spawn beside the taker and disrupt the run-up.
+        if (!isTakerTeam && (basePos - ballPos).GetLength() < 9.15f) {
+          Vector3 away = (basePos - ballPos).GetNormalized(
+              Vector3(-team->GetSide(), -signSide(ballPos.coords[1]), 0.0f));
+          basePos = ballPos + away * 9.15f;
+          basePos.coords[0] = clamp(basePos.coords[0], -pitchHalfW, pitchHalfW);
+          basePos.coords[1] = clamp(basePos.coords[1], -pitchHalfH, pitchHalfH);
+        }
         players.at(i)->ResetPosition(basePos, match->GetBall()->Predict(0).Get2D());
       }
       break;

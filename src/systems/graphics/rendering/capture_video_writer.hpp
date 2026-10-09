@@ -12,7 +12,9 @@
 class CaptureVideoWriter {
 public:
   CaptureVideoWriter(const std::string &executable, const std::string &filename,
-                     int width, int height, int fps) : width(width), height(height) {
+                     int width, int height, int fps,
+                     const std::string &codec = "ffv1", int quality = 18)
+      : width(width), height(height) {
 #ifdef WIN32
     SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
     HANDLE inputRead = NULL;
@@ -29,10 +31,20 @@ public:
     startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdInput = inputRead; startup.hStdOutput = log; startup.hStdError = log;
     PROCESS_INFORMATION info = {};
+    std::string encoderOptions;
+    if (codec == "h264") {
+      encoderOptions = " -c:v libx264 -preset medium -crf " +
+                       std::to_string(ClampQuality(quality)) + " -pix_fmt yuv420p";
+    } else if (codec == "h265" || codec == "hevc") {
+      encoderOptions = " -c:v libx265 -preset medium -crf " +
+                       std::to_string(ClampQuality(quality)) + " -pix_fmt yuv420p";
+    } else {
+      encoderOptions = " -c:v ffv1 -level 3 -threads 2 -pix_fmt bgr0";
+    }
     std::string command = Quote(executable) + " -hide_banner -loglevel error -nostdin -n"
       " -f rawvideo -pixel_format rgba -video_size " + std::to_string(width) + "x" + std::to_string(height) +
-      " -framerate " + std::to_string(fps) + " -i pipe:0 -an -c:v ffv1 -level 3"
-      " -threads 2 -pix_fmt bgr0 " + Quote(filename);
+      " -framerate " + std::to_string(fps) + " -i pipe:0 -an" + encoderOptions +
+      " " + Quote(filename);
     std::vector<char> args(command.begin(), command.end()); args.push_back(0);
     const BOOL ok = CreateProcessA(NULL, args.data(), NULL, NULL, TRUE, CREATE_NO_WINDOW,
                                   NULL, NULL, &startup, &info);
@@ -80,6 +92,9 @@ private:
   static std::string Quote(const std::string &value) {
     if (value.find('"') != std::string::npos) Fail("quote in encoder path");
     return "\"" + value + "\"";
+  }
+  static int ClampQuality(int quality) {
+    return quality < 0 ? 0 : (quality > 51 ? 51 : quality);
   }
   static void Fail(const std::string &message) { throw std::runtime_error("Capture: " + message); }
   CaptureVideoWriter(const CaptureVideoWriter &) = delete;

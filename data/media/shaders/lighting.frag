@@ -27,6 +27,7 @@ uniform vec3 lightPosition;
 uniform vec3 lightColor;
 uniform float lightRadius;
 uniform int lightType; // 0 directional, 1 point, 2 stadium spot
+uniform float wetPitch;
 
 out vec4 stdout0;
 out vec4 stdout1;
@@ -108,6 +109,14 @@ void main(void) {
   vec4 base = texture2D(map_albedo, texCoord);
 
   float spec = base.w;
+  bool isPitch = abs(worldPosition.z) < 0.15f && abs(worldPosition.x) < 60.0f && abs(worldPosition.y) < 40.0f;
+  if (isPitch && wetPitch > 0.0f) {
+    // Wet grass absorbs a little diffuse light but produces broader, stronger
+    // highlights from the stadium banks.
+    base.rgb *= 1.0f - wetPitch * 0.08f;
+    spec = clamp(spec * (1.0f + wetPitch * 2.4f) + wetPitch * 0.055f, 0.0f, 1.0f);
+    shininess = mix(shininess, 0.16f, wetPitch * 0.65f);
+  }
   vec3 specularColor = lightColor;// * 0.2f + base.rgb * 0.8f;
   vec3 specular = pow(max(0.0f, dot(refl, lightDir)), shininess * 128.0f) * spec * falloff * specularColor;
 

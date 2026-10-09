@@ -1,0 +1,75 @@
+# CAMERA TEST MATCH
+#
+# Formato: <secondi> <comando> <argomenti>
+# Le righe con lo stesso timestamp vengono eseguite nell'ordine qui sotto.
+#
+# Comandi disponibili:
+#   CAMERA <preset|AUTO>
+#   OPEN_PLAY <x> <y> <velocita_x> <velocita_y>
+#   BALL <x> <y> <velocita_x> <velocita_y>
+#   RESTART <CORNER|THROW_IN|GOAL_KICK|FREE_KICK|PENALTY|KICK_OFF> <team> <x> <y> <attesa_ms>
+#   GOAL <team_che_segna> <y>
+#   STOP
+#
+# Coordinate del campo: x da -55 a 55, y da -36 a 36.
+
+# 00:00 - sviluppo centrale, camera televisiva principale
+0.0 CAMERA MAIN_BROADCAST
+0.0 OPEN_PLAY -16 0 8 1
+
+# 00:07 - visione tattica completa
+7.0 CAMERA HIGH_WIDE
+7.0 OPEN_PLAY -5 -4 9 2
+
+# 00:14 - attacco nell'ultimo terzo
+14.0 CAMERA HIGH_GOAL_SIDE
+14.0 OPEN_PLAY 38 12 8 -2
+
+# 00:21 - angolo basso sul lato della porta
+21.0 CAMERA LOW_GOAL_SIDE
+21.0 OPEN_PLAY -45 -8 -6 2
+
+# 00:28 - visuale dietro la porta durante un attacco vivo
+28.0 CAMERA BEHIND_GOAL
+28.0 OPEN_PLAY 43 2 7 -1
+
+# 00:35 - rimessa laterale reale
+35.0 CAMERA LOW_TOUCHLINE
+35.0 RESTART THROW_IN 0 5 36 600
+37.5 CAMERA AUTO
+
+# 00:42 - corner reale: preparazione, rincorsa e battuta
+42.0 CAMERA CORNER
+42.0 RESTART CORNER 0 55 -36 600
+43.0 CAMERA AUTO
+
+# 00:49 - segue il pallone dopo il corner
+49.0 CAMERA HIGH_GOAL_SIDE
+49.0 OPEN_PLAY 48 -18 -9 5
+
+# 00:56 - primo piano durante un'interruzione
+56.0 CAMERA CLOSE_UP
+56.0 STOP
+
+# 01:03 - rinvio dal fondo; AUTO viene riattivato poco prima della battuta
+# per verificare lo switch immediato da HIGH_GOAL_SIDE.
+63.0 CAMERA HIGH_GOAL_SIDE
+63.0 RESTART GOAL_KICK 0 50.6 0 600
+65.2 CAMERA AUTO
+
+# 01:10 - rigore: camera dietro al tiratore, poi regia automatica al tocco
+70.0 CAMERA PENALTY
+70.0 RESTART PENALTY 0 44 0 600
+72.5 CAMERA AUTO
+
+# 01:18 - punizione centrale con porta e barriera in quadro
+78.0 CAMERA FREE_KICK
+78.0 RESTART FREE_KICK 0 34 4 600
+80.5 CAMERA AUTO
+
+# 01:26 - tiro deterministico che attraversa la linea e attiva GOAL_CELEBRATION
+86.0 GOAL 1 0
+
+# 01:36 - ritorno al gioco aperto e alla regia automatica
+96.0 CAMERA AUTO
+96.0 OPEN_PLAY 0 0 8 0

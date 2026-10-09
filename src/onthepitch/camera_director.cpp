@@ -64,9 +64,11 @@ CameraPreset MakePreset(e_CameraPresetType type, const char *name,
 
 CameraDirector::CameraDirector(Properties *configuration)
     : mode(e_Mode_Legacy), enabled(false), closeUpEnabled(false), initialized(false), finalThirdActive(false),
+      previousSetPieceActive(false), previousSetPiece(e_SetPiece_None),
       randomState(1), cameraId(0), maxCutsPerClip(1), cutsInClip(0),
       clipDuration_ms(0), directorStart_ms(0), clipStart_ms(0), shotStart_ms(0), shotEnd_ms(0),
       singlePreset(e_CameraPreset_MainBroadcast), activePreset(e_CameraPreset_Invalid),
+      scriptedPreset(e_CameraPreset_Invalid),
       activeAnchor(0), smoothedFocus(0), smoothedFov(35.0f) {
   BuildPresets(configuration);
 
@@ -95,34 +97,77 @@ CameraDirector::CameraDirector(Properties *configuration)
   ParseSchedule(configuration->Get("camera_schedule", "0:MAIN_BROADCAST"));
 }
 
+bool CameraDirector::SetScriptedPreset(const std::string &name) {
+  const std::string value = Upper(name);
+  if (value == "AUTO" || value == "NONE") {
+    scriptedPreset = e_CameraPreset_Invalid;
+    return true;
+  }
+  const e_CameraPresetType parsed = ParsePresetType(value);
+  if (parsed == e_CameraPreset_Invalid) return false;
+  scriptedPreset = parsed;
+  return true;
+}
+
 void CameraDirector::BuildPresets(Properties *configuration) {
   presets[e_CameraPreset_MainBroadcast] = MakePreset(
       e_CameraPreset_MainBroadcast, "MAIN_BROADCAST", 0.0f, -1.18f, 0.58f,
       34.0f, 29.0f, 44.0f, 62.0f, 14.0f, 82.0f, 2.2f, 1.2f, 10.0f, 6.0f, 14.0f,
       e_CameraTracking_Action);
   presets[e_CameraPreset_HighWide] = MakePreset(
-      e_CameraPreset_HighWide, "HIGH_WIDE", 0.0f, -1.12f, 1.10f,
-      45.0f, 40.0f, 54.0f, 58.0f, 10.0f, 84.0f, 1.5f, 0.8f, 4.0f, 5.0f, 12.0f,
+      e_CameraPreset_HighWide, "HIGH_WIDE", 0.0f, -1.20f, 0.92f,
+      48.0f, 43.0f, 56.0f, 62.0f, 12.0f, 84.0f, 1.7f, 0.9f, 4.0f, 5.0f, 12.0f,
+      e_CameraTracking_Tactical);
+  // SoccerNet-calibrated single broadcast view. The Barcelona-Manchester City
+  // 2016/17 reference uses the lateral main-camera mount, a 29-44 degree zoom
+  // envelope and action-centred tracking. Single mode keeps this framing
+  // continuous, without the replay and close-up cuts of a real production.
+  presets[e_CameraPreset_CosmosWide] = MakePreset(
+      e_CameraPreset_CosmosWide, "COSMOS_WIDE", 0.0f, -1.18f, 0.58f,
+      34.0f, 19.0f, 44.0f, 62.0f, 14.0f, 82.0f, 2.2f, 1.60f, 0.0f, 3600.0f, 3600.0f,
+      e_CameraTracking_Action);
+  // Fixed lateral diagnostic view for temporal-consistency tests. It keeps
+  // the visual language of MAIN_BROADCAST. A moderately wide lens lets the
+  // mount sit closer and lower than the first version while retaining both
+  // goals and all four touchline corners.
+  presets[e_CameraPreset_FullFieldDebug] = MakePreset(
+      e_CameraPreset_FullFieldDebug, "FULL_FIELD_DEBUG", 0.0f, -2.11f, 0.89f,
+      68.0f, 68.0f, 68.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 3600.0f, 3600.0f,
+      e_CameraTracking_Tactical);
+  // Original stadium-wide lateral composition retained as a separate option.
+  // Unlike FULL_FIELD_DEBUG, this view deliberately includes more of the
+  // stands and uses a longer, less distorted lens.
+  presets[e_CameraPreset_FullFieldPanoramic] = MakePreset(
+      e_CameraPreset_FullFieldPanoramic, "FULL_FIELD_PANORAMIC", 0.0f, -2.92f, 1.53f,
+      52.0f, 52.0f, 52.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 3600.0f, 3600.0f,
       e_CameraTracking_Tactical);
   presets[e_CameraPreset_HighGoalSide] = MakePreset(
-      e_CameraPreset_HighGoalSide, "HIGH_GOAL_SIDE", 0.48f, -1.00f, 0.66f,
-      38.0f, 33.0f, 50.0f, 52.0f, 10.0f, 84.0f, 2.0f, 1.0f, 4.0f, 4.0f, 9.0f,
+      e_CameraPreset_HighGoalSide, "HIGH_GOAL_SIDE", 0.40f, -1.14f, 0.74f,
+      42.0f, 37.0f, 55.0f, 66.0f, 12.0f, 84.0f, 2.8f, 1.3f, 4.0f, 4.0f, 9.0f,
       e_CameraTracking_GoalArea);
   presets[e_CameraPreset_LowTouchline] = MakePreset(
-      e_CameraPreset_LowTouchline, "LOW_TOUCHLINE", 0.0f, -1.015f, 0.095f,
-      39.0f, 33.0f, 52.0f, 74.0f, 35.0f, 88.0f, 2.8f, 1.4f, 1.5f, 3.0f, 6.0f,
+      e_CameraPreset_LowTouchline, "LOW_TOUCHLINE", 0.0f, -1.06f, 0.23f,
+      46.0f, 40.0f, 56.0f, 86.0f, 28.0f, 86.0f, 3.2f, 1.6f, 1.5f, 3.0f, 6.0f,
       e_CameraTracking_Action);
   presets[e_CameraPreset_LowGoalSide] = MakePreset(
-      e_CameraPreset_LowGoalSide, "LOW_GOAL_SIDE", 0.72f, -1.015f, 0.11f,
-      31.0f, 25.0f, 44.0f, 82.0f, 25.0f, 88.0f, 3.0f, 1.6f, 1.0f, 3.0f, 6.0f,
+      e_CameraPreset_LowGoalSide, "LOW_GOAL_SIDE", 0.78f, -0.82f, 0.24f,
+      36.0f, 31.0f, 47.0f, 74.0f, 38.0f, 86.0f, 3.0f, 1.6f, 1.0f, 3.0f, 6.0f,
       e_CameraTracking_GoalArea);
   presets[e_CameraPreset_Corner] = MakePreset(
       e_CameraPreset_Corner, "CORNER", 0.99f, -0.99f, 0.06f,
-      42.0f, 36.0f, 50.0f, 55.0f, 40.0f, 86.0f, 3.0f, 1.5f, 0.5f, 2.0f, 5.0f,
+      70.0f, 62.0f, 78.0f, 180.0f, 10.0f, 84.0f, 4.0f, 2.0f, 0.5f, 2.0f, 5.0f,
+      e_CameraTracking_GoalArea);
+  presets[e_CameraPreset_Penalty] = MakePreset(
+      e_CameraPreset_Penalty, "PENALTY", 0.0f, 0.0f, 0.0f,
+      58.0f, 50.0f, 66.0f, 180.0f, 10.0f, 78.0f, 4.5f, 2.0f, 0.0f, 2.0f, 6.0f,
+      e_CameraTracking_GoalArea);
+  presets[e_CameraPreset_FreeKick] = MakePreset(
+      e_CameraPreset_FreeKick, "FREE_KICK", 0.0f, 0.0f, 0.0f,
+      60.0f, 52.0f, 68.0f, 180.0f, 10.0f, 80.0f, 4.0f, 1.8f, 0.0f, 2.0f, 6.0f,
       e_CameraTracking_GoalArea);
   presets[e_CameraPreset_BehindGoal] = MakePreset(
-      e_CameraPreset_BehindGoal, "BEHIND_GOAL", 1.04f, 0.0f, 0.20f,
-      42.0f, 35.0f, 52.0f, 55.0f, 20.0f, 84.0f, 2.4f, 1.2f, 0.7f, 3.0f, 7.0f,
+      e_CameraPreset_BehindGoal, "BEHIND_GOAL", 1.0f, 0.0f, 0.35f,
+      40.0f, 35.0f, 50.0f, 58.0f, 30.0f, 84.0f, 2.4f, 1.1f, 0.7f, 3.0f, 7.0f,
       e_CameraTracking_GoalArea);
   presets[e_CameraPreset_CloseUp] = MakePreset(
       e_CameraPreset_CloseUp, "CLOSE_UP", 0.0f, 0.0f, 0.075f,
@@ -131,8 +176,11 @@ void CameraDirector::BuildPresets(Properties *configuration) {
 
   const e_CameraPresetType types[] = {
       e_CameraPreset_MainBroadcast, e_CameraPreset_HighWide,
+      e_CameraPreset_CosmosWide, e_CameraPreset_FullFieldDebug,
+      e_CameraPreset_FullFieldPanoramic,
       e_CameraPreset_HighGoalSide, e_CameraPreset_LowTouchline,
       e_CameraPreset_LowGoalSide, e_CameraPreset_Corner,
+      e_CameraPreset_Penalty, e_CameraPreset_FreeKick,
       e_CameraPreset_BehindGoal, e_CameraPreset_CloseUp};
   for (unsigned int i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
     CameraPreset &preset = presets[types[i]];
@@ -166,11 +214,18 @@ void CameraDirector::ParseSchedule(const std::string &value) {
 e_CameraPresetType CameraDirector::ParsePresetType(const std::string &name) {
   const std::string value = Upper(name);
   if (value.find("MAIN_BROADCAST") != std::string::npos) return e_CameraPreset_MainBroadcast;
+  if (value.find("FULL_FIELD_DEBUG") != std::string::npos ||
+      value.find("FULL_PITCH_DEBUG") != std::string::npos) return e_CameraPreset_FullFieldDebug;
+  if (value.find("FULL_FIELD_PANORAMIC") != std::string::npos ||
+      value.find("STADIUM_WIDE") != std::string::npos) return e_CameraPreset_FullFieldPanoramic;
+  if (value.find("COSMOS_WIDE") != std::string::npos) return e_CameraPreset_CosmosWide;
   if (value.find("HIGH_WIDE") != std::string::npos) return e_CameraPreset_HighWide;
   if (value.find("HIGH_GOAL_SIDE") != std::string::npos || value.find("HIGH_DIAGONAL") != std::string::npos) return e_CameraPreset_HighGoalSide;
   if (value.find("LOW_TOUCHLINE") != std::string::npos) return e_CameraPreset_LowTouchline;
   if (value.find("LOW_GOAL_SIDE") != std::string::npos || value.find("LOW_FIELD_LEVEL") != std::string::npos) return e_CameraPreset_LowGoalSide;
   if (value.find("BEHIND_GOAL") != std::string::npos) return e_CameraPreset_BehindGoal;
+  if (value.find("PENALTY") != std::string::npos) return e_CameraPreset_Penalty;
+  if (value.find("FREE_KICK") != std::string::npos || value.find("FREEKICK") != std::string::npos) return e_CameraPreset_FreeKick;
   if (value.find("CLOSE_UP") != std::string::npos || value.find("PLAYER") != std::string::npos) return e_CameraPreset_CloseUp;
   if (value.find("CORNER") != std::string::npos) return e_CameraPreset_Corner;
   return e_CameraPreset_Invalid;
@@ -180,10 +235,15 @@ const char *CameraDirector::PresetName(e_CameraPresetType type) {
   switch (type) {
     case e_CameraPreset_MainBroadcast: return "MAIN_BROADCAST";
     case e_CameraPreset_HighWide: return "HIGH_WIDE";
+    case e_CameraPreset_CosmosWide: return "COSMOS_WIDE";
+    case e_CameraPreset_FullFieldDebug: return "FULL_FIELD_DEBUG";
+    case e_CameraPreset_FullFieldPanoramic: return "FULL_FIELD_PANORAMIC";
     case e_CameraPreset_HighGoalSide: return "HIGH_GOAL_SIDE";
     case e_CameraPreset_LowTouchline: return "LOW_TOUCHLINE";
     case e_CameraPreset_LowGoalSide: return "LOW_GOAL_SIDE";
     case e_CameraPreset_Corner: return "CORNER";
+    case e_CameraPreset_Penalty: return "PENALTY";
+    case e_CameraPreset_FreeKick: return "FREE_KICK";
     case e_CameraPreset_BehindGoal: return "BEHIND_GOAL";
     case e_CameraPreset_CloseUp: return "CLOSE_UP";
     default: return "LEGACY";
@@ -209,19 +269,35 @@ float CameraDirector::GetContextWeight(e_CameraPresetType type, const CameraDire
   const bool finalThirdPosition = std::fabs(input.ballPosition.coords[0]) >= pitchHalfW - 25.0f;
   const bool corner = input.setPieceActive && input.setPiece == e_SetPiece_Corner;
   const bool throwIn = input.setPieceActive && input.setPiece == e_SetPiece_ThrowIn;
+  const bool penalty = input.setPieceActive && input.setPiece == e_SetPiece_Penalty;
+  const bool freeKick = input.setPieceActive && input.setPiece == e_SetPiece_FreeKick;
   const bool stoppage = !input.inPlay;
   switch (type) {
     case e_CameraPreset_MainBroadcast: return 1.0f;
     case e_CameraPreset_HighWide: return corner ? 1.2f : std::max(0.04f, 1.0f - goalProximity * 1.8f);
+    case e_CameraPreset_CosmosWide: return 0.0f;
+    case e_CameraPreset_FullFieldDebug: return 0.0f;
+    case e_CameraPreset_FullFieldPanoramic: return 0.0f;
     case e_CameraPreset_HighGoalSide:
       return finalThirdPosition ? 1.0f + goalProximity * 4.0f + (input.setPieceActive ? 1.2f : 0.0f) : 0.0f;
     case e_CameraPreset_LowTouchline:
       if (corner) return 0.0f;
       if (throwIn) return 6.0f;
       return input.inPlay ? wingProximity * isolation * 1.4f : 0.0f;
-    case e_CameraPreset_LowGoalSide: return 0.15f + goalProximity * 1.8f;
+    case e_CameraPreset_LowGoalSide:
+      // This low angle is intended for live open play only. In particular it
+      // must never compete with the dedicated CORNER/HIGH_GOAL_SIDE sequence
+      // or appear around midfield merely because of a non-zero base weight.
+      return input.inPlay && !input.setPieceActive && finalThirdPosition
+          ? 0.35f + goalProximity * 1.8f : 0.0f;
     case e_CameraPreset_Corner: return corner ? 9.0f : 0.0f;
-    case e_CameraPreset_BehindGoal: return corner ? 2.2f : (goalProximity * 0.5f);
+    case e_CameraPreset_Penalty: return penalty ? 10.0f : 0.0f;
+    case e_CameraPreset_FreeKick: return freeKick ? 10.0f : 0.0f;
+    case e_CameraPreset_BehindGoal:
+      // An occasional reverse angle for live attacks in the final third.
+      // It is not a restart camera and must not linger once play moves away.
+      return input.inPlay && !input.setPieceActive && finalThirdPosition
+          ? goalProximity * 0.55f : 0.0f;
     case e_CameraPreset_CloseUp: return closeUpEnabled && stoppage ? 1.0f : 0.0f;
     default: return 0.0f;
   }
@@ -258,7 +334,17 @@ Vector3 CameraDirector::BuildFocus(const CameraPreset &preset, const CameraDirec
   Vector3 focus = input.ballPosition * 0.78f + input.nearbyPlayersCenter * 0.22f;
   focus += input.actionDirection.GetNormalized(Vector3(0)) * 1.2f;
   focus.coords[2] = preset.tracking == e_CameraTracking_Player ? 1.15f : 0.8f;
-  if (preset.tracking == e_CameraTracking_Tactical) {
+  if (preset.type == e_CameraPreset_Penalty) {
+    const float goalSide = input.attackingGoalSide;
+    const Vector3 goal(goalSide * pitchHalfW, 0.0f, 1.15f);
+    focus = input.ballPosition * 0.42f + goal * 0.58f;
+    focus.coords[2] = 1.05f;
+  } else if (preset.type == e_CameraPreset_FreeKick) {
+    const float goalSide = input.attackingGoalSide;
+    const Vector3 goal(goalSide * pitchHalfW, 0.0f, 1.25f);
+    focus = input.ballPosition * 0.35f + goal * 0.65f;
+    focus.coords[2] = 1.15f;
+  } else if (preset.tracking == e_CameraTracking_Tactical) {
     focus = input.ballPosition * 0.65f + input.nearbyPlayersCenter * 0.35f;
     focus.coords[2] = 0.5f;
   } else if (preset.tracking == e_CameraTracking_GoalArea) {
@@ -269,19 +355,25 @@ Vector3 CameraDirector::BuildFocus(const CameraPreset &preset, const CameraDirec
     focus = input.ballPosition * 0.7f + goalFocus * 0.3f;
     if (preset.type == e_CameraPreset_Corner && input.setPieceActive &&
         input.setPiece == e_SetPiece_Corner) {
-      // Preparation shot: keep the taker and ball central. The actual cross
-      // is covered by HIGH_GOAL_SIDE just before the restart begins.
-      focus = input.ballPosition * 0.65f + input.primaryPlayerPosition * 0.35f;
-      focus.coords[2] = 1.15f;
+      // Look over the taker's shoulder into the penalty area. The actual
+      // cross is covered by HIGH_GOAL_SIDE just before the restart begins.
+      const Vector3 penaltySpot(input.attackingGoalSide * (pitchHalfW - 11.0f), 0.0f, 0.0f);
+      focus = input.ballPosition * 0.75f + penaltySpot * 0.25f;
+      focus.coords[2] = 0.8f;
     } else if (preset.type == e_CameraPreset_HighGoalSide) {
       // Keep enough of the penalty area in shot, especially the near-side
       // patch of grass directly below the physical camera.
-      focus = input.ballPosition * 0.74f + goalFocus * 0.26f;
+      focus = input.ballPosition * 0.84f + goalFocus * 0.16f;
       // This preset is a final-third camera: never let a retreating attack
       // drag it across midfield or towards the opposite grandstand.
       focus.coords[0] = side * std::max(std::fabs(focus.coords[0]), pitchHalfW - 24.0f);
-      focus.coords[1] = ClampValue(focus.coords[1], -pitchHalfH * 0.72f, pitchHalfH * 0.72f);
+      focus.coords[1] = ClampValue(focus.coords[1], -pitchHalfH * 0.94f, pitchHalfH * 0.94f);
     }
+  } else if (preset.type == e_CameraPreset_LowTouchline) {
+    // Aim a few metres infield so the thrower stays in the foreground while
+    // the intended receiving area remains visible.
+    const float ySide = input.ballPosition.coords[1] < 0.0f ? -1.0f : 1.0f;
+    focus = input.ballPosition + Vector3(0.0f, -ySide * 5.5f, 1.1f);
   } else if (preset.tracking == e_CameraTracking_Player) {
     focus = input.primaryPlayerPosition + Vector3(0, 0, 1.1f);
   }
@@ -301,13 +393,38 @@ Vector3 CameraDirector::BuildAnchor(const CameraPreset &preset, const CameraDire
   } else if (preset.type == e_CameraPreset_BehindGoal) {
     anchor.coords[0] *= xSide;
   } else if (preset.type == e_CameraPreset_LowTouchline) {
-    anchor.coords[0] = ClampValue(input.ballPosition.coords[0], -pitchHalfW * 0.72f, pitchHalfW * 0.72f);
+    const float towardMidfield = input.ballPosition.coords[0] < 0.0f ? 10.0f : -10.0f;
+    anchor.coords[0] = ClampValue(input.ballPosition.coords[0] + towardMidfield,
+                                  -pitchHalfW * 0.82f, pitchHalfW * 0.82f);
     anchor.coords[1] = std::fabs(preset.anchorY * pitchHalfH) * ySide;
   } else if (preset.type == e_CameraPreset_Corner) {
-    const Vector3 corner(xSide * pitchHalfW, ySide * pitchHalfH, 0.0f);
-    // A clean three-quarter preparation shot from inside the pitch. Keeping
-    // the physical point inside avoids roofs, stands and advertising boards.
-    anchor = corner + Vector3(-xSide * 15.0f, -ySide * 10.0f, 8.0f);
+    const Vector3 penaltySpot(input.attackingGoalSide * (pitchHalfW - 11.0f), 0.0f, 0.0f);
+    const Vector3 deliveryDirection =
+        (input.ballPosition - input.primaryPlayerPosition).Get2D().GetNormalized(
+            (penaltySpot - input.ballPosition).Get2D().GetNormalized(
+                Vector3(-xSide, -ySide, 0.0f)));
+    // Follow the real taker rather than an absolute corner coordinate. This
+    // keeps the player in the foreground and the penalty area beyond him.
+    // Stand behind the player's run-up line (player -> ball), not behind the
+    // eventual cross direction. This keeps the full taker, ball and box in
+    // the same wide composition.
+    anchor = input.primaryPlayerPosition - deliveryDirection * 3.2f +
+             Vector3(0.0f, 0.0f, 4.8f);
+  } else if (preset.type == e_CameraPreset_Penalty) {
+    const float goalSide = input.attackingGoalSide;
+    const Vector3 goal(goalSide * pitchHalfW, 0.0f, 0.0f);
+    const Vector3 shotDirection =
+        (goal - input.primaryPlayerPosition).Get2D().GetNormalized(
+            Vector3(goalSide, 0.0f, 0.0f));
+    anchor = input.primaryPlayerPosition - shotDirection * 4.0f +
+             Vector3(0.0f, 0.0f, 3.2f);
+  } else if (preset.type == e_CameraPreset_FreeKick) {
+    const float goalSide = input.attackingGoalSide;
+    const Vector3 goal(goalSide * pitchHalfW, 0.0f, 0.0f);
+    const Vector3 kickDirection = (goal - input.primaryPlayerPosition).Get2D().GetNormalized(
+        Vector3(goalSide, 0.0f, 0.0f));
+    anchor = input.primaryPlayerPosition - kickDirection * 5.0f +
+             Vector3(0.0f, 0.0f, 3.6f);
   } else if (preset.type == e_CameraPreset_CloseUp) {
     Vector3 direction = input.actionDirection.Get2D().GetNormalized(Vector3(1, 0, 0));
     Vector3 lateral(-direction.coords[1], direction.coords[0], 0);
@@ -331,6 +448,8 @@ void CameraDirector::ActivatePreset(e_CameraPresetType type, const CameraDirecto
 
 CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
   bool cut = false;
+  const bool goalKickJustTaken = previousSetPieceActive &&
+      previousSetPiece == e_SetPiece_GoalKick && !input.setPieceActive;
   if (!initialized) {
     directorStart_ms = input.time_ms;
     clipStart_ms = input.time_ms;
@@ -362,10 +481,25 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
       requested = kickImminent ? e_CameraPreset_HighGoalSide : e_CameraPreset_Corner;
     }
     else if (input.setPiece == e_SetPiece_ThrowIn) requested = e_CameraPreset_LowTouchline;
+    else if (input.setPiece == e_SetPiece_Penalty) requested = e_CameraPreset_Penalty;
+    else if (input.setPiece == e_SetPiece_FreeKick) requested = e_CameraPreset_FreeKick;
   }
   if (mode == e_Mode_Procedural && !input.setPieceActive &&
       activePreset == e_CameraPreset_Corner) {
     requested = e_CameraPreset_HighGoalSide;
+  }
+  if (mode == e_Mode_Procedural && !input.setPieceActive &&
+      (activePreset == e_CameraPreset_Penalty ||
+       activePreset == e_CameraPreset_FreeKick)) {
+    requested = e_CameraPreset_HighGoalSide;
+  }
+  if (mode == e_Mode_Procedural && !input.setPieceActive &&
+      activePreset == e_CameraPreset_LowTouchline) {
+    requested = e_CameraPreset_MainBroadcast;
+  }
+  if (mode == e_Mode_Procedural && !input.inPlay && !input.setPieceActive &&
+      activePreset == e_CameraPreset_LowGoalSide) {
+    requested = e_CameraPreset_MainBroadcast;
   }
 
   // A generic tactical view should not survive deep into the attacking
@@ -383,11 +517,18 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
   }
   // Conversely, do not keep the goal-side angle after the attack has clearly
   // moved back out of the final third.
-  if (mode == e_Mode_Procedural && !input.setPieceActive && !finalThirdActive &&
+  if (mode == e_Mode_Procedural && !input.setPieceActive &&
       activePreset == e_CameraPreset_HighGoalSide &&
-      input.time_ms >= shotStart_ms + 3000) {
+      (!finalThirdActive || goalKickJustTaken)) {
     requested = e_CameraPreset_MainBroadcast;
   }
+  if (mode == e_Mode_Procedural && activePreset == e_CameraPreset_BehindGoal &&
+      (!input.inPlay || input.setPieceActive || !finalThirdActive)) {
+    requested = e_CameraPreset_MainBroadcast;
+  }
+  // A camera-test scenario is authoritative: it deliberately bypasses the
+  // editorial selector while keeping the real tracking/framing implementation.
+  if (scriptedPreset != e_CameraPreset_Invalid) requested = scriptedPreset;
   if (requested != activePreset) {
     ActivatePreset(requested, input);
     ++cutsInClip;
@@ -395,6 +536,39 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
   }
 
   const CameraPreset &preset = presets[activePreset];
+  if (activePreset == e_CameraPreset_FullFieldDebug ||
+      activePreset == e_CameraPreset_FullFieldPanoramic) {
+    // A genuinely static optical history is intentional here: Cosmos sees
+    // every player from frame zero, with no pan, zoom, tracking or cuts.
+    CameraDirectorOutput output;
+    output.position = Vector3(0.0f, preset.anchorY * pitchHalfH,
+                              preset.height * pitchHalfH);
+    output.yaw = 0.0f;
+    // The closer debug view favours the playing surface; the panoramic view
+    // recreates the original centred stadium composition from the screenshot.
+    const float targetY = activePreset == e_CameraPreset_FullFieldDebug ? -7.0f : 0.0f;
+    output.pitch = std::atan2(targetY - output.position.coords[1],
+                              output.position.coords[2]);
+    output.fov = preset.fov;
+    output.nearCap = 1.0f;
+    output.farCap = 260.0f;
+    output.cut = cut;
+    output.preset = activePreset;
+    output.cameraName = PresetName(activePreset);
+    output.cameraId = cameraId;
+    previousSetPieceActive = input.setPieceActive;
+    previousSetPiece = input.setPiece;
+    return output;
+  }
+  if (input.setPieceActive &&
+      (activePreset == e_CameraPreset_Corner ||
+       activePreset == e_CameraPreset_Penalty ||
+       activePreset == e_CameraPreset_FreeKick)) {
+    // Restart cameras are selected before the referee necessarily places the
+    // taker. Rebuild their mount while preparing the kick, so the final frame
+    // is tied to the actual taker rather than the player selected at the cut.
+    activeAnchor = BuildAnchor(preset, input);
+  }
   const Vector3 desiredFocus = BuildFocus(preset, input);
   if (!cut) {
     const float focusFactor = SmoothFactor(preset.trackingResponse, input.delta_ms);
@@ -405,10 +579,18 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
   const float speed = ClampValue(input.ballMovement.GetLength() / 18.0f, 0.0f, 1.0f);
   const float ballGroundDistance = (input.ballPosition - activeAnchor).Get2D().GetLength();
   const float nearCamera = ClampValue((28.0f - ballGroundDistance) / 22.0f, 0.0f, 1.0f);
+  // The SoccerNet main operator progressively tightens the lens when play is
+  // on the opposite side of the pitch. The existing near-camera rule already
+  // widens the shot below the mount; this complementary term preserves player
+  // readability when the ball is far away without introducing a camera cut.
+  const float farCamera = ClampValue((ballGroundDistance - 48.0f) / 28.0f, 0.0f, 1.0f);
   float desiredFov = preset.fov + speed * 2.5f - finalThird * 3.0f;
+  if (activePreset == e_CameraPreset_CosmosWide) {
+    desiredFov -= farCamera * 15.0f;
+  }
   if (activePreset == e_CameraPreset_HighGoalSide) {
     const float nearTouchline = std::fabs(input.ballPosition.coords[1]) / pitchHalfH;
-    desiredFov = preset.fov + speed * 1.5f + nearTouchline * 3.0f;
+    desiredFov = preset.fov + speed * 1.5f + nearTouchline * 5.0f;
   }
   // Widen every preset as play enters the patch directly below its physical
   // mount. This is the common blind zone of sideline and diagonal cameras.
@@ -446,6 +628,8 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
   output.preset = activePreset;
   output.cameraName = PresetName(activePreset);
   output.cameraId = cameraId;
+  previousSetPieceActive = input.setPieceActive;
+  previousSetPiece = input.setPiece;
   return output;
 }
 

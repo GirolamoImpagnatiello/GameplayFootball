@@ -10,6 +10,8 @@
 #include "proceduralpitch.hpp"
 
 #include "scene/objectfactory.hpp"
+#include "scene/objects/geometry.hpp"
+#include "scene/resources/geometrydata.hpp"
 #include "utils/splitgeometry.hpp"
 #include "utils/directoryparser.hpp"
 #include "AIsupport/AIfunctions.hpp"
@@ -19,6 +21,7 @@
 #include "scene/resources/soundbuffer.hpp"
 
 #include "base/geometry/triangle.hpp"
+#include "base/geometry/trianglemeshutils.hpp"
 
 #include "player/playerofficial.hpp"
 
@@ -127,6 +130,12 @@ std::string FunctionTypeName(e_FunctionType functionType) {
 std::string LowercaseCopy(const std::string &value) {
   std::string result = value;
   std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return result;
+}
+
+std::string UppercaseCopy(const std::string &value) {
+  std::string result = value;
+  std::transform(result.begin(), result.end(), result.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
   return result;
 }
 
@@ -381,6 +390,16 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   debugSaveCornerSequenceStart_ms = 0;
   debugSaveCornerCameraShot = -1;
   debugSaveCornerDefendingTeamID = 0;
+  debugCameraScenarioEnabled = GetConfiguration()->GetBool(
+      "debug_camera_scenario_enabled", false);
+  debugCameraScenarioStarted = false;
+  debugCameraScenarioStart_ms = 0;
+  debugCameraScenarioNextEvent = 0;
+  if (debugCameraScenarioEnabled) {
+    // The general scenario supersedes the older one-off corner harness.
+    debugSaveCornerSequenceEnabled = false;
+    LoadCameraScenario();
+  }
 
   autoUpdateIngameCamera = true;
 
@@ -471,6 +490,10 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
     stadiumLights.push_back(light);
   }
   SetRandomSunParams();
+
+  // Rain currently relies on the wet-pitch and atmospheric response. The old
+  // full-screen streak layer was deliberately removed because it read as a
+  // camera filter, especially during cuts.
 
 
   // human gamers
@@ -583,6 +606,14 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   root->AddView(messageCaption);
   messageCaptionRemoveTime_ms = actualTime_ms + 5000;
 
+  cameraDebugOverlayEnabled = GetConfiguration()->GetBool("camera_debug_overlay", true);
+  cameraDebugCaption = new Gui2Caption(menuTask->GetWindowManager(), "game_camera_debug", 0, 7, 30, 3, "CAMERA: LEGACY (#0)");
+  cameraDebugCaption->SetColor(Vector3(255, 255, 255));
+  cameraDebugCaption->SetOutlineColor(Vector3(0, 0, 0));
+  cameraDebugCaption->SetPosition(98.0f - cameraDebugCaption->GetTextWidthPercent(), 7.0f);
+  root->AddView(cameraDebugCaption);
+  if (cameraDebugOverlayEnabled) cameraDebugCaption->Show();
+
   // for usage in destructor
   scene3D = GetScene3D();
 
@@ -682,6 +713,8 @@ void Match::Exit() {
   fullbodyNode.reset();
 
   messageCaption->Hide();
+  cameraDebugCaption->Exit();
+  delete cameraDebugCaption;
 
   // remove, don't delete, because main.cpp is owner
   GetDynamicNode()->RemoveObject(GetGreenDebugPilon());
@@ -696,6 +729,7 @@ void Match::Exit() {
   scene3D->DeleteNode(stadiumNode);
   scene3D->DeleteNode(goalsNode);
   scene3D->DeleteNode(stadiumFloodlightNode);
+  if (rainNode) scene3D->DeleteNode(rainNode);
 
   // DeleteNode(stadiumFloodlightNode) owns and unloads the four lights and all
   // their per-camera shadow maps. Drop our remaining references as well.
@@ -1463,11 +1497,15 @@ void Match::InitializeCosmosCaptureExporter() {
   cosmosRgbDirectory = (boost::filesystem::path(cosmosCaptureDirectory) / "rgb").string();
   cosmosDepthDirectory = (boost::filesystem::path(cosmosCaptureDirectory) / "depth").string();
   cosmosSegmentationDirectory = (boost::filesystem::path(cosmosCaptureDirectory) / "seg").string();
+  cosmosEdgeDirectory = (boost::filesystem::path(cosmosCaptureDirectory) / "edge").string();
 
   try {
     boost::filesystem::create_directories(cosmosRgbDirectory);
     boost::filesystem::create_directories(cosmosDepthDirectory);
     boost::filesystem::create_directories(cosmosSegmentationDirectory);
+    if (GetConfiguration()->Get("cosmos_control_profile", "semantic") == "luca_instance") {
+      boost::filesystem::create_directories(cosmosEdgeDirectory);
+    }
     cosmosCameraMetadataFile.open(
         (boost::filesystem::path(cosmosCaptureDirectory) / "camera_metadata.jsonl").string().c_str(),
         std::ios::out | std::ios::trunc);
@@ -1517,16 +1555,32 @@ void Match::ScheduleCosmosFrameCapture() {
   request.rgbFilename = (boost::filesystem::path(cosmosRgbDirectory) / frameFilename).string();
   request.depthFilename = (boost::filesystem::path(cosmosDepthDirectory) / frameFilename).string();
   request.segmentationFilename = (boost::filesystem::path(cosmosSegmentationDirectory) / frameFilename).string();
+  const bool lucaInstanceControls =
+    GetConfiguration()->Get("cosmos_control_profile", "semantic") == "luca_instance";
+  if (lucaInstanceControls) {
+    request.edgeFilename = (boost::filesystem::path(cosmosEdgeDirectory) / frameFilename).string();
+  }
+  if (cameraDebugOverlayEnabled) {
+    request.rgbDebugLabel = "CAMERA: " + fetchedbuf_cameraType +
+                            " (#" + int_to_str(fetchedbuf_cameraPhysicalId) + ")";
+  }
   const std::string captureFormat = GetConfiguration()->Get("cosmos_capture_format", "png");
   if (captureFormat == "video" || captureFormat == "video_and_png") {
     request.rgbFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_rgb.mkv").string();
     request.depthFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_depth.mkv").string();
     request.segmentationFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_seg.mkv").string();
+    if (lucaInstanceControls) {
+      request.edgeFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_edge.mkv").string();
+    }
     if (captureFormat == "video_and_png") {
       ControlFrameCaptureRequest pngRequest;
       pngRequest.rgbFilename = (boost::filesystem::path(cosmosRgbDirectory) / frameFilename).string();
       pngRequest.depthFilename = (boost::filesystem::path(cosmosDepthDirectory) / frameFilename).string();
       pngRequest.segmentationFilename = (boost::filesystem::path(cosmosSegmentationDirectory) / frameFilename).string();
+      if (lucaInstanceControls) {
+        pngRequest.edgeFilename = (boost::filesystem::path(cosmosEdgeDirectory) / frameFilename).string();
+      }
+      pngRequest.rgbDebugLabel = request.rgbDebugLabel;
       GetGraphicsSystem()->RequestControlFrameCapture(pngRequest);
     }
   }
@@ -1580,7 +1634,7 @@ void Match::FlushCosmosCaptureMetadata() {
       spec << "{\n";
       spec << "  \"name\": " << Quote(GetConfiguration()->Get("cosmos_test_name", "gameplayfootball_transfer_depth_seg")) << ",\n";
       spec << "  \"model_mode\": \"video2video\",\n";
-      spec << "  \"resolution\": \"720\",\n";
+      spec << "  \"resolution\": " << Quote(GetConfiguration()->Get("cosmos_model_resolution", "720")) << ",\n";
       spec << "  \"aspect_ratio\": \"16,9\",\n";
       spec << "  \"num_frames\": " << cosmosCaptureFrameCount << ",\n";
       spec << "  \"fps\": " << cosmosCaptureFps << ",\n";
@@ -1596,6 +1650,11 @@ void Match::FlushCosmosCaptureMetadata() {
       spec << "  \"guidance\": " << GetConfiguration()->GetReal("cosmos_guidance", 4.0f) << ",\n";
       spec << "  \"control_guidance\": " << GetConfiguration()->GetReal("cosmos_control_guidance", 1.0f) << ",\n";
       spec << "  \"prompt_path\": \"prompt.json\",\n";
+      const bool lucaInstanceControls =
+        GetConfiguration()->Get("cosmos_control_profile", "semantic") == "luca_instance";
+      if (lucaInstanceControls) {
+        spec << "  \"edge\": { \"control_path\": \"control_edge.mp4\", \"preset_edge_threshold\": \"low\" },\n";
+      }
       spec << "  \"depth\": { \"control_path\": \"control_depth.mp4\" },\n";
       spec << "  \"seg\": { \"control_path\": \"control_seg.mp4\" }\n";
       spec << "}\n";
@@ -1605,21 +1664,36 @@ void Match::FlushCosmosCaptureMetadata() {
   {
     std::ofstream metadata((captureRoot / "metadata.json").string().c_str(), std::ios::out | std::ios::trunc);
     if (metadata.is_open()) {
+      int captureWidth = 0;
+      int captureHeight = 0;
+      int captureBpp = 0;
+      GetGraphicsSystem()->GetContextSize(captureWidth, captureHeight, captureBpp);
       metadata << "{\n";
       metadata << "  \"fps\": " << cosmosCaptureFps << ",\n";
+      metadata << "  \"width\": " << captureWidth << ",\n";
+      metadata << "  \"height\": " << captureHeight << ",\n";
+      metadata << "  \"source_resolution\": " << Quote(int_to_str(captureWidth) + "x" + int_to_str(captureHeight)) << ",\n";
       const std::string format = GetConfiguration()->Get("cosmos_capture_format", "png");
       metadata << "  \"capture_format\": " << Quote(format) << ",\n";
+      const std::string controlProfile = GetConfiguration()->Get("cosmos_control_profile", "semantic");
+      metadata << "  \"control_profile\": " << Quote(controlProfile) << ",\n";
       metadata << "  \"team_aware\": " << (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false) ? "true" : "false") << ",\n";
       const bool segmentationV2 = GetConfiguration()->GetBool("cosmos_segmentation_v2", true);
-      metadata << "  \"segmentation_version\": " << (segmentationV2 ? 3 : 1) << ",\n";
-      metadata << "  \"team_palette\": {\"home\": [0,0,255], \"away\": [255,0,0], \"home_goalkeeper\": [128,160,255], \"away_goalkeeper\": [0,64,0], \"official\": [0,255,255]},\n";
-      metadata << "  \"semantic_palette\": {\"field_lines\": [255,0,255], \"pitch\": [25,166,46], \"ball\": [255,242,46], \"goal\": [217,217,217], \"other\": [115,115,115]";
-      if (segmentationV2) {
-        metadata << ", \"advertising_board\": [255,128,0], \"stadium_barrier_or_wall\": [0,128,128], \"crowd\": [128,0,128], \"seats\": [0,0,96], \"stands_structure\": [160,96,48]";
+      metadata << "  \"segmentation_version\": " << (controlProfile == "luca_instance" ? 4 : (segmentationV2 ? 3 : 1)) << ",\n";
+      if (controlProfile == "luca_instance") {
+        metadata << "  \"instance_palette_index_rule\": \"actor_id_mod_32\",\n";
+        metadata << "  \"instance_palette_rgb\": [[255,0,128],[128,255,0],[96,128,255],[255,128,32],[0,224,224],[224,192,255],[176,96,255],[255,224,96],[64,192,96],[255,96,96],[96,255,192],[192,160,96],[128,96,64],[64,128,160],[224,96,192],[160,224,96],[96,160,224],[224,160,160],[160,160,224],[224,224,160],[96,224,128],[192,96,64],[128,224,255],[224,128,255],[160,192,128],[128,128,192],[192,128,128],[96,192,192],[192,192,96],[160,96,128],[128,192,160],[192,160,224]],\n";
+        metadata << "  \"segmentation_background\": [0,0,0],\n";
       } else {
-        metadata << ", \"stadium\": [140,115,191]";
+        metadata << "  \"team_palette\": {\"home\": [8,18,40], \"away\": [255,166,213], \"home_goalkeeper\": [255,128,0], \"away_goalkeeper\": [0,220,255], \"official\": [220,255,0]},\n";
+        metadata << "  \"semantic_palette\": {\"field_lines\": [255,255,255], \"pitch\": [0,140,40], \"ball\": [255,0,0], \"goal\": [101,117,139], \"other\": [128,128,128]";
+        if (segmentationV2) {
+          metadata << ", \"advertising_board\": [50,50,255], \"stadium_barrier_or_wall\": [0,180,160], \"crowd\": [160,0,200], \"seats\": [50,50,50], \"stands_structure\": [255,190,80]";
+        } else {
+          metadata << ", \"stadium\": [160,0,200]";
+        }
+        metadata << "},\n";
       }
-      metadata << "},\n";
       const std::string depthMapping = GetConfiguration()->Get("cosmos_depth_mapping", "linear_metric");
       metadata << "  \"depth_encoding\": " << Quote(depthMapping == "linear_metric" ?
         "linear_metric_uint8_near_white_far_black" : "inverted_device_depth_uint8_same_as_png") << ",\n";
@@ -1645,10 +1719,18 @@ void Match::FlushCosmosCaptureMetadata() {
       metadata << "  \"rgb_directory\": \"rgb\",\n";
       metadata << "  \"depth_directory\": \"depth\",\n";
       metadata << "  \"segmentation_directory\": \"seg\",\n";
+      if (controlProfile == "luca_instance") {
+        metadata << "  \"edge_directory\": \"edge\",\n";
+      }
       const std::string extension = format == "png" ? ".mp4" : ".mkv";
       metadata << "  \"rgb_video\": " << Quote("control_rgb" + extension) << ",\n";
       metadata << "  \"depth_video\": " << Quote("control_depth" + extension) << ",\n";
       metadata << "  \"segmentation_video\": " << Quote("control_seg" + extension) << ",\n";
+      if (controlProfile == "luca_instance") {
+        metadata << "  \"edge_video\": " << Quote("control_edge" + extension) << ",\n";
+        metadata << "  \"segmentation_encoding\": \"persistent_actor_instance_colors_on_black\",\n";
+        metadata << "  \"edge_encoding\": \"rgb_low_threshold_masked_by_posed_actor_instances\",\n";
+      }
       metadata << "  \"cosmos_spec\": \"cosmos_transfer_spec.json\"\n";
       metadata << "}\n";
     }
@@ -1667,6 +1749,180 @@ void Match::SetCameraParams(float zoom, float height, float fov, float angleFact
   cameraUserHeight = height;
   cameraUserFOV = fov;
   cameraUserAngleFactor = angleFactor;
+}
+
+void Match::LoadCameraScenario() {
+  debugCameraScenarioEvents.clear();
+  debugCameraScenarioNextEvent = 0;
+
+  boost::filesystem::path scenarioPath(
+      GetConfiguration()->Get("debug_camera_scenario_file", "camera_test.script"));
+  if (scenarioPath.is_relative()) {
+    const boost::filesystem::path configPath(GetConfigFilename());
+    scenarioPath = configPath.parent_path() / scenarioPath;
+  }
+
+  std::ifstream input(scenarioPath.string().c_str());
+  if (!input.is_open()) {
+    Log(e_Error, "Match", "LoadCameraScenario",
+        "Could not open camera scenario " + scenarioPath.string());
+    debugCameraScenarioEnabled = false;
+    return;
+  }
+
+  std::string lineText;
+  unsigned int lineNumber = 0;
+  while (std::getline(input, lineText)) {
+    ++lineNumber;
+    const std::size_t comment = lineText.find('#');
+    if (comment != std::string::npos) lineText.erase(comment);
+    std::istringstream line(lineText);
+    float seconds = 0.0f;
+    std::string command;
+    if (!(line >> seconds >> command)) continue;
+    if (seconds < 0.0f) {
+      Log(e_Warning, "Match", "LoadCameraScenario",
+          "Ignoring negative timestamp at line " + int_to_str(lineNumber));
+      continue;
+    }
+
+    CameraScenarioEvent event;
+    event.time_ms = static_cast<unsigned long>(seconds * 1000.0f + 0.5f);
+    event.line = lineNumber;
+    event.command = UppercaseCopy(command);
+    std::string argument;
+    while (line >> argument) event.arguments.push_back(argument);
+    debugCameraScenarioEvents.push_back(event);
+  }
+
+  std::stable_sort(debugCameraScenarioEvents.begin(), debugCameraScenarioEvents.end(),
+      [](const CameraScenarioEvent &a, const CameraScenarioEvent &b) {
+        return a.time_ms < b.time_ms;
+      });
+  if (debugCameraScenarioEvents.empty()) {
+    Log(e_Error, "Match", "LoadCameraScenario", "Camera scenario contains no events");
+    debugCameraScenarioEnabled = false;
+    return;
+  }
+  Log(e_Notice, "Match", "LoadCameraScenario",
+      "Loaded " + int_to_str(static_cast<int>(debugCameraScenarioEvents.size())) +
+      " events from " + scenarioPath.string());
+}
+
+void Match::ExecuteCameraScenarioEvent(const CameraScenarioEvent &event) {
+  const std::vector<std::string> &args = event.arguments;
+  const std::string errorPrefix = "Camera scenario line " + int_to_str(event.line) + ": ";
+  if (event.command == "CAMERA") {
+    if (args.size() != 1 || !cameraDirector ||
+        !cameraDirector->SetScriptedPreset(args.empty() ? "" : args[0])) {
+      Log(e_Error, "Match", "ExecuteCameraScenarioEvent",
+          errorPrefix + "CAMERA expects a valid preset or AUTO");
+    }
+    return;
+  }
+
+  if (event.command == "OPEN_PLAY" || event.command == "BALL") {
+    if (args.size() != 4) {
+      Log(e_Error, "Match", "ExecuteCameraScenarioEvent",
+          errorPrefix + event.command + " expects x y velocity_x velocity_y");
+      return;
+    }
+    const Vector3 position(static_cast<float>(atof(args[0].c_str())),
+                           static_cast<float>(atof(args[1].c_str())), 0.25f);
+    if (event.command == "OPEN_PLAY") {
+      ResetSituation(position.Get2D());
+      referee->StartDebugOpenPlay();
+    }
+    ball->SetPosition(position);
+    ball->SetMomentum(Vector3(static_cast<float>(atof(args[2].c_str())),
+                              static_cast<float>(atof(args[3].c_str())), 0.0f));
+    return;
+  }
+
+  if (event.command == "RESTART") {
+    if (args.size() != 5) {
+      Log(e_Error, "Match", "ExecuteCameraScenarioEvent",
+          errorPrefix + "RESTART expects type team x y prepare_delay_ms");
+      return;
+    }
+    const std::string type = UppercaseCopy(args[0]);
+    e_SetPiece setPiece = e_SetPiece_None;
+    if (type == "CORNER") setPiece = e_SetPiece_Corner;
+    else if (type == "THROW_IN") setPiece = e_SetPiece_ThrowIn;
+    else if (type == "GOAL_KICK") setPiece = e_SetPiece_GoalKick;
+    else if (type == "FREE_KICK") setPiece = e_SetPiece_FreeKick;
+    else if (type == "PENALTY") setPiece = e_SetPiece_Penalty;
+    else if (type == "KICK_OFF") setPiece = e_SetPiece_KickOff;
+    if (setPiece == e_SetPiece_None) {
+      Log(e_Error, "Match", "ExecuteCameraScenarioEvent",
+          errorPrefix + "unknown restart type " + args[0]);
+      return;
+    }
+    referee->ForceDebugRestart(
+        setPiece, atoi(args[1].c_str()),
+        Vector3(static_cast<float>(atof(args[2].c_str())),
+                static_cast<float>(atof(args[3].c_str())), 0.0f),
+        static_cast<unsigned long>(std::max(0, atoi(args[4].c_str()))));
+    return;
+  }
+
+  if (event.command == "GOAL") {
+    if (args.size() != 2) {
+      Log(e_Error, "Match", "ExecuteCameraScenarioEvent",
+          errorPrefix + "GOAL expects scoring_team y");
+      return;
+    }
+    const int teamID = clamp(atoi(args[0].c_str()), 0, 1);
+    const float y = clamp(static_cast<float>(atof(args[1].c_str())), -3.0f, 3.0f);
+    Team *scoringTeam = GetTeam(teamID);
+    const float direction = -scoringTeam->GetSide();
+    const float goalX = direction * pitchHalfW;
+    const Vector3 position(goalX - direction * 1.5f, y, 0.25f);
+    ResetSituation(position.Get2D());
+    referee->StartDebugOpenPlay();
+    std::vector<Player*> players;
+    scoringTeam->GetActivePlayers(players);
+    Player *scorer = 0;
+    for (std::size_t i = 0; i < players.size(); ++i) {
+      if (players[i]->GetFormationEntry().role != e_PlayerRole_GK) {
+        scorer = players[i];
+        break;
+      }
+    }
+    if (scorer) {
+      scorer->ResetPosition(position.Get2D() - Vector3(direction * 1.2f, 0, 0),
+                            Vector3(goalX, y, 0));
+      scoringTeam->SetLastTouchPlayer(scorer, e_TouchType_Intentional_Kicked);
+    } else {
+      SetLastTouchTeamID(teamID, e_TouchType_Intentional_Kicked);
+    }
+    ball->SetPosition(position);
+    ball->SetMomentum(Vector3(direction * 18.0f, 0.0f, 0.0f));
+    return;
+  }
+
+  if (event.command == "STOP") {
+    StopPlay();
+    StopSetPiece();
+    return;
+  }
+
+  Log(e_Error, "Match", "ExecuteCameraScenarioEvent",
+      errorPrefix + "unknown command " + event.command);
+}
+
+void Match::ProcessCameraScenario() {
+  if (!debugCameraScenarioEnabled || debugCameraScenarioEvents.empty()) return;
+  if (!debugCameraScenarioStarted) {
+    debugCameraScenarioStarted = true;
+    debugCameraScenarioStart_ms = actualTime_ms;
+  }
+  const unsigned long elapsed_ms = actualTime_ms - debugCameraScenarioStart_ms;
+  while (debugCameraScenarioNextEvent < debugCameraScenarioEvents.size() &&
+         debugCameraScenarioEvents[debugCameraScenarioNextEvent].time_ms <= elapsed_ms) {
+    ExecuteCameraScenarioEvent(debugCameraScenarioEvents[debugCameraScenarioNextEvent]);
+    ++debugCameraScenarioNextEvent;
+  }
 }
 
 void Match::ProcessDebugSaveCornerSequence() {
@@ -1966,16 +2222,39 @@ void Match::UpdateDirectedCamera() {
   }
 
   const RefereeBuffer &restart = referee->GetBuffer();
+  const Vector3 cameraBallPosition = restart.active ? restart.restartPos : ballPosition;
+  const float cameraAttackingGoalSide = restart.active && restart.teamID >= 0 && restart.teamID <= 1
+      ? static_cast<float>(-GetTeam(restart.teamID)->GetSide())
+      : (ballPosition.coords[0] < 0.0f ? -1.0f : 1.0f);
+  Vector3 cameraPrimaryPlayerPosition = GetDesignatedPossessionPlayer() ?
+      GetDesignatedPossessionPlayer()->GetPosition() : nearbyCenter;
+  if (restart.active) {
+    if (restart.taker) {
+      cameraPrimaryPlayerPosition = restart.taker->GetPosition();
+    } else {
+      // The director can be activated before PrepareSetPiece has selected and
+      // positioned the taker. Seed a plausible taker location at once so the
+      // first frame of the shot is not based on an unrelated midfield player.
+      Vector3 target(cameraAttackingGoalSide * pitchHalfW, 0.0f, 0.0f);
+      if (restart.desiredSetPiece == e_SetPiece_Corner) {
+        target = Vector3(cameraAttackingGoalSide * (pitchHalfW - 11.0f), 0.0f, 0.0f);
+      }
+      const Vector3 kickDirection =
+          (target - restart.restartPos).Get2D().GetNormalized(
+              Vector3(cameraAttackingGoalSide, 0.0f, 0.0f));
+      cameraPrimaryPlayerPosition = restart.restartPos - kickDirection * 1.8f;
+    }
+  }
   CameraDirectorInput input;
   input.time_ms = actualTime_ms;
   input.delta_ms = static_cast<unsigned long>(std::max(0, timeSincePreviousPreparePut_ms));
-  input.ballPosition = ballPosition;
+  input.ballPosition = cameraBallPosition;
   input.ballMovement = ball->GetMovement();
   input.nearbyPlayersCenter = nearbyCenter;
   input.nearbyPlayerCount = static_cast<unsigned int>(std::max(0.0f, nearbyCount - 1.0f));
-  input.primaryPlayerPosition = GetDesignatedPossessionPlayer() ?
-      GetDesignatedPossessionPlayer()->GetPosition() : nearbyCenter;
+  input.primaryPlayerPosition = cameraPrimaryPlayerPosition;
   input.actionDirection = actionDirection;
+  input.attackingGoalSide = cameraAttackingGoalSide;
   input.inPlay = IsInPlay();
   input.setPieceActive = restart.active || IsInSetPiece();
   input.setPiece = restart.active ? restart.desiredSetPiece : e_SetPiece_None;
@@ -1998,9 +2277,22 @@ void Match::UpdateDirectedCamera() {
     Vector3 targetPos = ball->Predict(0).Get2D();
     if (lastGoalScorer) targetPos = lastGoalScorer->GetPosition();
     const radian rotation = static_cast<float>(goalScoredTimer) * 0.0005f;
-    cameraOrientation.SetAngleAxis(0.45f * pi, Vector3(1, 0, 0));
-    cameraNodeOrientation.SetAngleAxis(rotation, Vector3(0, 0, 1));
-    cameraNodePosition = targetPos + Vector3(0, -1, 0).GetRotated2D(rotation) * 15.0f + Vector3(0, 0, 3);
+    cameraNodePosition = targetPos +
+        Vector3(0, -1, 0).GetRotated2D(rotation) * 11.0f + Vector3(0, 0, 5.5f);
+    // Keep celebration shots inside the unobstructed stadium bowl. The old
+    // 15 m orbit could put the camera behind the stands near either goal.
+    cameraNodePosition.coords[0] = clamp(cameraNodePosition.coords[0],
+                                          -pitchHalfW + 5.0f, pitchHalfW - 5.0f);
+    cameraNodePosition.coords[1] = clamp(cameraNodePosition.coords[1],
+                                          -pitchHalfH + 5.0f, pitchHalfH - 5.0f);
+    const Vector3 celebrationTarget = targetPos + Vector3(0, 0, 1.1f);
+    const Vector3 toTarget = celebrationTarget - cameraNodePosition;
+    cameraNodeOrientation.SetAngleAxis(toTarget.GetAngle2D() + 1.5f * pi,
+                                       Vector3(0, 0, 1));
+    cameraOrientation.SetAngleAxis(
+        atan2f(toTarget.Get2D().GetLength(),
+               std::max(0.1f, cameraNodePosition.coords[2] - celebrationTarget.coords[2])),
+        Vector3(1, 0, 0));
     cameraFOV = 35.0f;
     cameraNearCap = 0.5f;
     cameraFarCap = 220.0f;
@@ -2040,6 +2332,7 @@ void Match::Process() {
 
   if (!pause) {
 
+    ProcessCameraScenario();
     ProcessDebugSaveCornerSequence();
 
     if (IsInPlay()) {
@@ -2440,6 +2733,22 @@ void Match::Put() {
   cameraNode->SetRotation(fetchedbuf_cameraNodeOrientation, false);
   camera->SetFOV(fetchedbuf_cameraFOV);
   camera->SetCapping(fetchedbuf_cameraNearCap, fetchedbuf_cameraFarCap);
+
+  const std::string cameraDebugText = "CAMERA: " + fetchedbuf_cameraType +
+                                      " (#" + int_to_str(fetchedbuf_cameraPhysicalId) + ")";
+  if (cameraDebugCaption->GetCaption() != cameraDebugText) {
+    cameraDebugCaption->SetCaption(cameraDebugText);
+    cameraDebugCaption->SetPosition(98.0f - cameraDebugCaption->GetTextWidthPercent(), 7.0f);
+  }
+
+  if (rainNode) {
+    // The mesh contains two vertically repeated copies. Moving it by one
+    // period creates continuous rainfall without uploading vertices per frame.
+    const float rainPeriod = 30.0f;
+    const float rainFallSpeed = 18.0f;
+    const float rainOffset = fmodf(fetchedbuf_actualTime_ms * 0.001f * rainFallSpeed, rainPeriod);
+    rainNode->SetPosition(Vector3(0.0f, 0.0f, -rainOffset), false);
+  }
 
   if (!GetPause()) {
 
@@ -3340,6 +3649,129 @@ void Match::ProcessReplayMessages() {
   }
   replayState.Unlock();
 
+}
+
+void Match::PrepareRain() {
+
+  const int baseDropCount = 220;
+  const float verticalPeriod = 30.0f;
+  std::vector<Vector3> positions;
+  std::vector<Vector3> normals;
+  std::vector<Vector3> texcoords;
+  std::vector<Vector3> tangents;
+  std::vector<Vector3> bitangents;
+  positions.reserve(baseDropCount * 2 * 8 * 3);
+  normals.reserve(positions.capacity());
+  texcoords.reserve(positions.capacity());
+  tangents.reserve(positions.capacity());
+  bitangents.reserve(positions.capacity());
+
+  const Vector3 uv0(0.0f, 0.0f, 0.0f);
+  const Vector3 uv1(1.0f, 0.0f, 0.0f);
+  const Vector3 uv2(1.0f, 1.0f, 0.0f);
+  const Vector3 uv3(0.0f, 1.0f, 0.0f);
+
+  const auto addVertex = [&](const Vector3 &position, const Vector3 &normal,
+                             const Vector3 &uv, const Vector3 &tangent,
+                             const Vector3 &bitangent) {
+    positions.push_back(position);
+    normals.push_back(normal);
+    texcoords.push_back(uv);
+    tangents.push_back(tangent);
+    bitangents.push_back(bitangent);
+  };
+  const auto addTriangle = [&](const Vector3 &a, const Vector3 &b, const Vector3 &c,
+                               const Vector3 &normal, const Vector3 &uva,
+                               const Vector3 &uvb, const Vector3 &uvc,
+                               const Vector3 &tangent, const Vector3 &bitangent) {
+    addVertex(a, normal, uva, tangent, bitangent);
+    addVertex(b, normal, uvb, tangent, bitangent);
+    addVertex(c, normal, uvc, tangent, bitangent);
+  };
+  const auto addDoubleSidedQuad = [&](const Vector3 &a, const Vector3 &b,
+                                      const Vector3 &c, const Vector3 &d,
+                                      const Vector3 &normal, const Vector3 &tangent) {
+    const Vector3 bitangent(0.0f, 0.0f, 1.0f);
+    addTriangle(a, b, c, normal, uv0, uv1, uv2, tangent, bitangent);
+    addTriangle(a, c, d, normal, uv0, uv2, uv3, tangent, bitangent);
+    addTriangle(c, b, a, normal * -1.0f, uv2, uv1, uv0, tangent, bitangent);
+    addTriangle(d, c, a, normal * -1.0f, uv3, uv2, uv0, tangent, bitangent);
+  };
+
+  // Local deterministic generator: weather visuals must never perturb the
+  // random sequence used by gameplay.
+  unsigned int rainSeed = 0x51A7C3u;
+  auto randomUnit = [&]() -> float {
+    rainSeed = rainSeed * 1664525u + 1013904223u;
+    return static_cast<float>((rainSeed >> 8) & 0x00FFFFFFu) / 16777215.0f;
+  };
+
+  for (int drop = 0; drop < baseDropCount; ++drop) {
+    const float x = -72.0f + randomUnit() * 144.0f;
+    const float y = -50.0f + randomUnit() * 100.0f;
+    const float z = 1.0f + randomUnit() * (verticalPeriod - 1.0f);
+    const float length = 0.28f + randomUnit() * 0.42f;
+    const float halfWidth = 0.007f + randomUnit() * 0.007f;
+    const float windLean = 0.08f + randomUnit() * 0.10f;
+
+    for (int copy = 0; copy < 2; ++copy) {
+      const float topZ = z + copy * verticalPeriod;
+      const Vector3 top(x, y, topZ);
+      const Vector3 bottom(x + windLean, y + windLean * 0.18f, topZ - length);
+
+      addDoubleSidedQuad(
+        top + Vector3(-halfWidth, 0.0f, 0.0f),
+        top + Vector3( halfWidth, 0.0f, 0.0f),
+        bottom + Vector3( halfWidth, 0.0f, 0.0f),
+        bottom + Vector3(-halfWidth, 0.0f, 0.0f),
+        Vector3(0.0f, 1.0f, 0.0f), Vector3(1.0f, 0.0f, 0.0f));
+      addDoubleSidedQuad(
+        top + Vector3(0.0f, -halfWidth, 0.0f),
+        top + Vector3(0.0f,  halfWidth, 0.0f),
+        bottom + Vector3(0.0f,  halfWidth, 0.0f),
+        bottom + Vector3(0.0f, -halfWidth, 0.0f),
+        Vector3(1.0f, 0.0f, 0.0f), Vector3(0.0f, 1.0f, 0.0f));
+    }
+  }
+
+  const int elementSize = static_cast<int>(positions.size() * 3);
+  const int meshSize = elementSize * GetTriangleMeshElementCount();
+  float *rawMesh = new float[meshSize];
+  const std::vector<Vector3> *elements[] = {
+    &positions, &normals, &texcoords, &tangents, &bitangents
+  };
+  for (int element = 0; element < GetTriangleMeshElementCount(); ++element) {
+    for (unsigned int vertex = 0; vertex < positions.size(); ++vertex) {
+      memcpy(&rawMesh[element * elementSize + vertex * 3],
+             elements[element]->at(vertex).coords, sizeof(float) * 3);
+    }
+  }
+
+  Material material = Material();
+  material.diffuseTexture = ResourceManagerPool::GetInstance().GetManager<Surface>(
+    e_ResourceType_Surface)->Fetch("media/textures/white.png", true, true);
+  material.illuminationTexture = material.diffuseTexture;
+  material.shininess = 0.0f;
+  material.specular_amount = 0.0f;
+  // A neutral emissive contribution prevents the very thin surfaces from
+  // turning black when their normal faces away from the stadium lights.
+  material.self_illumination = Vector3(0.85f, 0.85f, 0.85f);
+
+  boost::intrusive_ptr<Resource<GeometryData> > geometryData =
+    ResourceManagerPool::GetInstance().GetManager<GeometryData>(
+      e_ResourceType_GeometryData)->Fetch("procedural match rain", false, false);
+  geometryData->GetResource()->AddTriangleMesh(
+    material, rawMesh, meshSize, std::vector<unsigned int>());
+
+  boost::intrusive_ptr<Geometry> rainGeometry = static_pointer_cast<Geometry>(
+    ObjectFactory::GetInstance().CreateObject("rain volume", e_ObjectType_Geometry));
+  GetScene3D()->CreateSystemObjects(rainGeometry);
+  rainGeometry->SetGeometryData(geometryData);
+
+  rainNode = boost::intrusive_ptr<Node>(new Node("rain"));
+  rainNode->SetLocalMode(e_LocalMode_Absolute);
+  rainNode->AddObject(rainGeometry);
+  GetScene3D()->AddNode(rainNode);
 }
 
 void Match::PrepareGoalNetting() {

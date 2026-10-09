@@ -60,5 +60,10 @@ if (Test-Path -LiteralPath $metadataPath) {
 Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "rgb") -OutputPath (Join-Path $capture "control_rgb.mp4") -MasterVideo (Join-Path $capture "control_rgb.mkv")
 Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "depth") -OutputPath (Join-Path $capture "control_depth.mp4") -MasterVideo (Join-Path $capture "control_depth.mkv")
 Invoke-FfmpegSequence -InputDirectory (Join-Path $capture "seg") -OutputPath (Join-Path $capture "control_seg.mp4") -MasterVideo (Join-Path $capture "control_seg.mkv")
+$edgeMaster = Join-Path $capture "control_edge.mkv"
+$edgeFrames = Join-Path $capture "edge"
+if ((Test-Path -LiteralPath $edgeMaster) -or (Test-Path -LiteralPath $edgeFrames)) {
+  Invoke-FfmpegSequence -InputDirectory $edgeFrames -OutputPath (Join-Path $capture "control_edge.mp4") -MasterVideo $edgeMaster
+}
 
 Write-Host "Cosmos videos written under $capture"

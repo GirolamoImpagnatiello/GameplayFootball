@@ -131,6 +131,29 @@ std::string GetConfigFilename() {
   return configFile;
 }
 
+static void ApplyCaptureResolutionPreset(Properties *configuration) {
+  if (!configuration->GetBool("cosmos_capture_enabled", false)) return;
+  std::string preset = configuration->Get("cosmos_capture_resolution", "720p");
+  for (std::size_t i = 0; i < preset.size(); ++i) {
+    if (preset[i] >= 'A' && preset[i] <= 'Z') preset[i] += 'a' - 'A';
+  }
+  int width = 1280;
+  int height = 720;
+  if (preset == "1080p" || preset == "fullhd" || preset == "1920x1080") {
+    width = 1920;
+    height = 1080;
+  } else if (preset == "4k" || preset == "uhd" || preset == "2160p" ||
+             preset == "3840x2160") {
+    width = 3840;
+    height = 2160;
+  } else if (preset != "720p" && preset != "1280x720") {
+    Log(e_Warning, "main", "ApplyCaptureResolutionPreset",
+        "Unknown cosmos_capture_resolution; using 1280x720");
+  }
+  configuration->SetInt("context_x", width);
+  configuration->SetInt("context_y", height);
+}
+
 boost::shared_ptr<Scene2D> GetScene2D() {
   return scene2D;
 }
@@ -316,6 +339,10 @@ int main(int argc, char **argv) {
   if (argc > 1) configFile = argv[1];
   else configFile = ResolveDefaultConfigFilename();
   config->LoadFile(configFile.c_str());
+
+  // Captures are framebuffer-native. Apply the requested recording tier
+  // before graphics and Scene2D create their render targets.
+  ApplyCaptureResolutionPreset(config);
 
   Initialize(*config);
 

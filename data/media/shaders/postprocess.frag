@@ -57,7 +57,6 @@ vec3 Compress(vec3 color, float startThreshold, float endThreshold) {
   return color;
 }
 
-
 void main(void) {
   vec2 texCoord = gl_FragCoord.xy;
   texCoord.x -= contextX;
@@ -128,6 +127,7 @@ void main(void) {
 
   fragColor = ContrastSaturationBrightness(fragColor, environmentBrightness, 1.0f, saturation);
   fragColor = AlternateContrast(fragColor, environmentContrast);
+
   fragColor = clamp(fragColor, 0.0, 1.0);
 
   //gl_FragColor = vec4(fragColor, 0);

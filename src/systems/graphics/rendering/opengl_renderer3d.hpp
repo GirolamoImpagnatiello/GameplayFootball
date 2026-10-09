@@ -130,6 +130,8 @@ namespace blunted {
 
       virtual bool SaveBackBuffer(const std::string &filename);
       virtual bool SaveBackBuffer(const std::vector<std::string> &filenames);
+      virtual bool SaveBackBuffer(const std::vector<std::string> &filenames,
+                                  const std::string &debugLabel);
       virtual bool SaveDepthBuffer(const std::string &filename, int width, int height, float cameraNear, float cameraFar);
       virtual bool SaveDepthBuffer(const std::vector<std::string> &filenames, int width, int height, float cameraNear, float cameraFar);
       virtual bool SaveColorBuffer(const std::string &filename, e_TargetAttachment attachment, int width, int height);

@@ -127,8 +127,13 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
       semanticClass = teamPlayer->GetTeamID() == 0 ? "home" : "away";
     }
   }
-  if (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false)) {
-    fullbodyNode->GetObject("fullbody")->SetProperty("capture_class", semanticClass.c_str());
+  const bool lucaInstanceControls =
+    GetConfiguration()->Get("cosmos_control_profile", "semantic") == "luca_instance";
+  const std::string captureClass = lucaInstanceControls
+    ? "instance:" + int_to_str(player->GetID())
+    : semanticClass;
+  if (lucaInstanceControls || GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false)) {
+    fullbodyNode->GetObject("fullbody")->SetProperty("capture_class", captureClass.c_str());
   }
 
   boost::intrusive_ptr< Resource<GeometryData> > bodyGeom = boost::static_pointer_cast<Geometry>(fullbodyNode->GetObject("fullbody"))->GetGeometryData();
@@ -164,8 +169,8 @@ HumanoidBase::HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_pt
 
   boost::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch("media/objects/players/hairstyles/" + player->GetPlayerData()->GetHairStyle() + ".ase", true, true);
   hairStyle = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject("hairstyle", e_ObjectType_Geometry));
-  if (GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false)) {
-    hairStyle->SetProperty("capture_class", semanticClass.c_str());
+  if (lucaInstanceControls || GetConfiguration()->GetBool("cosmos_segmentation_team_aware", false)) {
+    hairStyle->SetProperty("capture_class", captureClass.c_str());
   }
 
   scene3D->CreateSystemObjects(hairStyle);

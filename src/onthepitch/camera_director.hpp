@@ -12,10 +12,15 @@
 enum e_CameraPresetType {
   e_CameraPreset_MainBroadcast,
   e_CameraPreset_HighWide,
+  e_CameraPreset_CosmosWide,
+  e_CameraPreset_FullFieldDebug,
+  e_CameraPreset_FullFieldPanoramic,
   e_CameraPreset_HighGoalSide,
   e_CameraPreset_LowTouchline,
   e_CameraPreset_LowGoalSide,
   e_CameraPreset_Corner,
+  e_CameraPreset_Penalty,
+  e_CameraPreset_FreeKick,
   e_CameraPreset_BehindGoal,
   e_CameraPreset_CloseUp,
   e_CameraPreset_Invalid
@@ -57,6 +62,7 @@ struct CameraDirectorInput {
   unsigned int nearbyPlayerCount;
   Vector3 primaryPlayerPosition;
   Vector3 actionDirection;
+  float attackingGoalSide;
   bool inPlay;
   bool setPieceActive;
   e_SetPiece setPiece;
@@ -82,6 +88,7 @@ class CameraDirector {
 
   bool IsEnabled() const { return enabled; }
   CameraDirectorOutput Update(const CameraDirectorInput &input);
+  bool SetScriptedPreset(const std::string &name);
   std::string GetActiveCameraName() const;
   unsigned int GetActiveCameraId() const { return cameraId; }
 
@@ -116,6 +123,8 @@ class CameraDirector {
   bool closeUpEnabled;
   bool initialized;
   bool finalThirdActive;
+  bool previousSetPieceActive;
+  e_SetPiece previousSetPiece;
   unsigned int randomState;
   unsigned int cameraId;
   int maxCutsPerClip;
@@ -127,6 +136,7 @@ class CameraDirector {
   unsigned long shotEnd_ms;
   e_CameraPresetType singlePreset;
   e_CameraPresetType activePreset;
+  e_CameraPresetType scriptedPreset;
   Vector3 activeAnchor;
   Vector3 smoothedFocus;
   float smoothedFov;

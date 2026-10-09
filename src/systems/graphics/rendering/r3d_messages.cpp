@@ -17,6 +17,9 @@ namespace blunted {
   bool Renderer3DMessage_RenderView::Execute(void *caller) {
 
     Renderer3D *renderer = static_cast<Renderer3D*>(caller);
+    const e_CullingMode geometryCulling =
+        GetConfiguration()->GetBool("render_geometry_double_sided", false)
+            ? e_CullingMode_Off : e_CullingMode_Back;
 
     renderer->ClearBuffer(Vector3(0, 0, 0), false, true);
 
@@ -133,7 +136,7 @@ namespace blunted {
     renderer->SetRenderTargets(targets);
     targets.clear();
 
-    renderer->SetCullingMode(e_CullingMode_Back);
+    renderer->SetCullingMode(geometryCulling);
     renderer->SetBlendingMode(e_BlendingMode_Off);
     renderer->SetDepthTesting(true);
 
@@ -169,7 +172,7 @@ namespace blunted {
       renderer->SetRenderTargets(targets);
       targets.clear();
 
-      renderer->SetCullingMode(e_CullingMode_Back);
+      renderer->SetCullingMode(geometryCulling);
       renderer->SetBlendingMode(e_BlendingMode_Off);
       renderer->SetDepthTesting(true);
       renderer->SetDepthFunction(e_DepthFunction_LessOrEqual);
@@ -186,6 +189,9 @@ namespace blunted {
       if (!segmentationFilenames.empty()) {
         renderer->SaveColorBuffer(segmentationFilenames, e_TargetAttachment_Color3, view.width, view.height);
       }
+
+      // Edge is produced after the RGB readback by combining RGB detail with
+      // this exact segmentation mask. This keeps pose and texture synchronized.
     }
 
 
@@ -250,6 +256,7 @@ namespace blunted {
     renderer->SetUniformMatrix4("lighting", "inverseProjectionViewMatrix", inverseProjectionViewMatrix);
     renderer->SetUniformMatrix4("lighting", "projectionMatrix", projectionMatrix);
     renderer->SetUniformMatrix4("lighting", "viewMatrix", viewMatrix);
+    renderer->SetUniformFloat("lighting", "wetPitch", environment.wetPitch);
 
     //renderer->SetUniformFloat2("lighting", "cameraClip", depthParamNear, depthParamFar);
 
@@ -297,7 +304,6 @@ namespace blunted {
     renderer->SetUniformFloat("postprocess", "environmentBrightness", environment.postBrightness);
     renderer->SetUniformFloat("postprocess", "environmentContrast", environment.postContrast);
     renderer->SetUniformFloat("postprocess", "environmentSaturation", environment.postSaturation);
-
     renderer->SetViewport(view.x, height - (view.y + view.height), view.width, view.height);
 
     renderer->SetTextureUnit(2);
@@ -315,13 +321,15 @@ namespace blunted {
     renderer->SetFramebufferGammaCorrection(false);
 
     std::vector<std::string> rgbFilenames;
+    std::string rgbDebugLabel;
     for (std::size_t i = 0; i < buffer.captureRequests.size(); ++i) {
       if (!buffer.captureRequests[i].rgbFilename.empty()) {
         rgbFilenames.push_back(buffer.captureRequests[i].rgbFilename);
+        if (rgbDebugLabel.empty()) rgbDebugLabel = buffer.captureRequests[i].rgbDebugLabel;
       }
     }
     if (!rgbFilenames.empty()) {
-      renderer->SaveBackBuffer(rgbFilenames);
+      renderer->SaveBackBuffer(rgbFilenames, rgbDebugLabel);
     }
 
     bool flushAfterCapture = false;
