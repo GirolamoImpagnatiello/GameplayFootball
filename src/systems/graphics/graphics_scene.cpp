@@ -56,7 +56,7 @@ namespace blunted {
       return graphicsObject;
     }
     if (object->GetObjectType() == e_ObjectType_Image2D) {
-      GraphicsOverlay2D *graphicsObject = new GraphicsOverlay2D(this);
+      GraphicsOverlay2D *graphicsObject = new GraphicsOverlay2D(this, object->GetName());
       object->Attach(graphicsObject->GetInterpreter(e_ObjectType_Image2D));
       return graphicsObject;
     }

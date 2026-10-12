@@ -24,7 +24,11 @@
 
 namespace blunted {
 
-  GraphicsOverlay2D::GraphicsOverlay2D(GraphicsScene *graphicsScene) : GraphicsObject(graphicsScene) {
+  GraphicsOverlay2D::GraphicsOverlay2D(GraphicsScene *graphicsScene, const std::string &name) : GraphicsObject(graphicsScene) {
+    // The broadcast score bar is the only HUD element included in control
+    // captures. The TV logo shares the scoreboard view, so exclude it by name.
+    captureScoreboard = name.find("scoreboard") != std::string::npos &&
+                        name.find("tvlogo") == std::string::npos;
     //printf("CREATING GFX OBJECT\n");
   }
 
@@ -112,6 +116,7 @@ namespace blunted {
     queueEntry.position[1] = caller->position[1];
     queueEntry.size[0] = caller->size[0];
     queueEntry.size[1] = caller->size[1];
+    queueEntry.captureScoreboard = caller->captureScoreboard;
     caller->GetGraphicsScene()->GetGraphicsSystem()->GetOverlay2DQueue().PushMessage(queueEntry);
   }
 

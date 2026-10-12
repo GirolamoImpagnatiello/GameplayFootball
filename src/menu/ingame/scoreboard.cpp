@@ -12,11 +12,13 @@
 
 using namespace blunted;
 
-Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match) : Gui2View(windowManager, "scoreboard", 2, 2, 96, 4), match(match) {
+Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match) : Gui2View(windowManager, "scoreboard", 2, 2, 96, 5.5f), match(match) {
   x_percent = 2;
   y_percent = 2;
   width_percent = 96;
-  height_percent = 4;
+  // Broadcast HUD: increase the complete score strip proportionally so the
+  // clock, team names and score remain legible in 480p/720p captures.
+  height_percent = 5.5f;
 
   Vector3 textColor = 255;
   Vector3 textOutlineColor = 0;
@@ -29,14 +31,14 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match) :
   // percentages
   float xOffset[9];
   xOffset[0] = 1; // league logo
-  xOffset[1] = 5; // time
+  xOffset[1] = 5.5f; // time
   xOffset[2] = 15; // t1 logo
-  xOffset[3] = 19; // t1 name
-  xOffset[4] = 25; // t1 score
-  xOffset[5] = 29; // t2 logo
-  xOffset[6] = 33; // t2 name
-  xOffset[7] = 39; // t2 score
-  xOffset[8] = 43; // end
+  xOffset[3] = 19.5f; // t1 name
+  xOffset[4] = 25.5f; // t1 score
+  xOffset[5] = 30; // t2 logo
+  xOffset[6] = 34.5f; // t2 name
+  xOffset[7] = 40.5f; // t2 score
+  xOffset[8] = 45.5f; // end
   float relToAbsMultiplier = w / (width_percent * 1.0f);
   content_yOffset = 0.2f;
   float content_xOffset = 0.2f;
@@ -70,7 +72,9 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match) :
   goalCountCaption[1]->SetColor(textColor);
   goalCountCaption[1]->SetOutlineColor(textOutlineColor);
 
-  tvLogo = new Gui2Image(windowManager, "game_scoreboard_tvlogo", width_percent - (height_percent * 2.0f) / windowManager->GetAspectRatio(), 0, (height_percent * 2.0f) / windowManager->GetAspectRatio(), height_percent);
+  // Keep the unrelated broadcaster logo compact while the score strip grows.
+  const float tvLogoHeight = 5.2f;
+  tvLogo = new Gui2Image(windowManager, "game_scoreboard_tvlogo", width_percent - (tvLogoHeight * 2.0f) / windowManager->GetAspectRatio(), 0, (tvLogoHeight * 2.0f) / windowManager->GetAspectRatio(), tvLogoHeight);
   this->AddView(tvLogo);
   tvLogo->LoadImage("media/menu/tvlogo.png");
   tvLogo->Show();

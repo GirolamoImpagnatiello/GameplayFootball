@@ -43,8 +43,9 @@ for ($i = $first + 1; $i -le $last; $i++) {
 }
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Choose a new output directory to avoid mixing clips.' }
 $output = (New-Item -ItemType Directory -Path $OutputDirectory).FullName
-$streams = @{rgb=$meta.rgb_video; depth=$meta.depth_video; seg=$meta.segmentation_video}
-foreach ($channel in 'rgb','depth','seg') {
+$streams = [ordered]@{rgb=$meta.rgb_video; depth=$meta.depth_video; seg=$meta.segmentation_video}
+if ($meta.edge_video) { $streams.edge = $meta.edge_video }
+foreach ($channel in $streams.Keys) {
     $inputFile = Join-Path $capture $streams[$channel]
     $filter = "trim=start_frame=${first}:end_frame=$($last + 1),setpts=PTS-STARTPTS"
     $ffargs = @('-hide_banner','-loglevel','error','-nostdin','-n','-i',$inputFile,'-vf',$filter,'-an','-frames:v',$FrameCount)
@@ -80,10 +81,11 @@ $meta | Add-Member -NotePropertyName source_start_frame -NotePropertyValue $Star
 $meta | Add-Member -NotePropertyName event_annotation -NotePropertyValue $annotation -Force
 if ($EventTimeMs -ge 0) {
     $eventFrameIndex = 0
-    while ($eventFrameIndex -lt $FrameCount -and [long]$timestamps[$first + $eventFrameIndex] -lt $EventTimeMs) { $eventFrameIndex++ }
+    $timestamps = @($meta.simulation_timestamps_ms)
+    while ($eventFrameIndex -lt $FrameCount -and [long]$timestamps[$eventFrameIndex] -lt $EventTimeMs) { $eventFrameIndex++ }
     if ($eventFrameIndex -ge $FrameCount) { $eventFrameIndex = $FrameCount - 1 }
     $meta | Add-Member -NotePropertyName event_frame_index -NotePropertyValue ($eventFrameIndex + 1) -Force
-    $meta | Add-Member -NotePropertyName event_offset_seconds -NotePropertyValue (([long]$timestamps[$first + $eventFrameIndex] - $EventTimeMs) / 1000.0) -Force
+    $meta | Add-Member -NotePropertyName event_offset_seconds -NotePropertyValue (([long]$timestamps[$eventFrameIndex] - $EventTimeMs) / 1000.0) -Force
     $meta | Add-Member -NotePropertyName event_actual_time_ms -NotePropertyValue $EventTimeMs -Force
 }
 $meta | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $output 'metadata.json')

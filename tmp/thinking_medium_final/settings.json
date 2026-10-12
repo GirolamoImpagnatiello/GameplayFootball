@@ -1,0 +1,35 @@
+{
+  "model": "qwen3.8-flash-next",
+  "thinking": {
+    "enable_thinking": true,
+    "reasoning_effort": "medium",
+    "preserve_thinking": false
+  },
+  "generation": {
+    "max_tokens": 32768,
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "top_k": 20,
+    "min_p": 0.0
+  },
+  "video": {
+    "fps": 8,
+    "num_frames": -1,
+    "max_videos_per_prompt": 1
+  },
+  "server": {
+    "max_model_len": 131072,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 16,
+    "gpu_memory_utilization": 0.78,
+    "quantization": "modelopt_fp4",
+    "moe_backend": "marlin"
+  },
+  "client": {
+    "max_workers": 1,
+    "max_retries": 5,
+    "timeout_seconds": 3600
+  },
+  "prompt_schema": "Cosmos standard structured caption",
+  "prompt_file": "prompt.txt"
+}

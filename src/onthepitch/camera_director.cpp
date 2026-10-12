@@ -67,6 +67,7 @@ CameraDirector::CameraDirector(Properties *configuration)
       previousSetPieceActive(false), previousSetPiece(e_SetPiece_None),
       randomState(1), cameraId(0), maxCutsPerClip(1), cutsInClip(0),
       clipDuration_ms(0), directorStart_ms(0), clipStart_ms(0), shotStart_ms(0), shotEnd_ms(0),
+      cornerDeliveryUntil_ms(0),
       singlePreset(e_CameraPreset_MainBroadcast), activePreset(e_CameraPreset_Invalid),
       scriptedPreset(e_CameraPreset_Invalid),
       activeAnchor(0), smoothedFocus(0), smoothedFov(35.0f) {
@@ -118,13 +119,13 @@ void CameraDirector::BuildPresets(Properties *configuration) {
       e_CameraPreset_HighWide, "HIGH_WIDE", 0.0f, -1.20f, 0.92f,
       48.0f, 43.0f, 56.0f, 62.0f, 12.0f, 84.0f, 1.7f, 0.9f, 4.0f, 5.0f, 12.0f,
       e_CameraTracking_Tactical);
-  // SoccerNet-calibrated single broadcast view. The Barcelona-Manchester City
-  // 2016/17 reference uses the lateral main-camera mount, a 29-44 degree zoom
-  // envelope and action-centred tracking. Single mode keeps this framing
-  // continuous, without the replay and close-up cuts of a real production.
+  // Single-camera television master. The mount sits a little farther behind
+  // the near touchline and travels only part of the ball's longitudinal
+  // movement. The remaining offset preserves a diagonal broadcast view even
+  // while the camera follows play toward either goal.
   presets[e_CameraPreset_CosmosWide] = MakePreset(
-      e_CameraPreset_CosmosWide, "COSMOS_WIDE", 0.0f, -1.18f, 0.58f,
-      34.0f, 19.0f, 44.0f, 62.0f, 14.0f, 82.0f, 2.2f, 1.60f, 0.0f, 3600.0f, 3600.0f,
+      e_CameraPreset_CosmosWide, "COSMOS_WIDE", 0.0f, -1.22f, 0.42f,
+      29.0f, 18.0f, 40.0f, 62.0f, 14.0f, 82.0f, 2.0f, 1.35f, 0.0f, 3600.0f, 3600.0f,
       e_CameraTracking_Action);
   // Fixed lateral diagnostic view for temporal-consistency tests. It keeps
   // the visual language of MAIN_BROADCAST. A moderately wide lens lets the
@@ -332,9 +333,47 @@ e_CameraPresetType CameraDirector::SelectPreset(const CameraDirectorInput &input
 
 Vector3 CameraDirector::BuildFocus(const CameraPreset &preset, const CameraDirectorInput &input) const {
   Vector3 focus = input.ballPosition * 0.78f + input.nearbyPlayersCenter * 0.22f;
-  focus += input.actionDirection.GetNormalized(Vector3(0)) * 1.2f;
+  const float actionSpeed = ClampValue(input.ballMovement.GetLength() / 18.0f, 0.0f, 1.0f);
+  // Fast television pans look ahead of the ball. This both exposes the next
+  // passing lane and prevents a sprint or clearance from reaching the edge
+  // of frame before the mechanically smoothed camera can catch up.
+  const float leadDistance = 1.2f + actionSpeed * 3.2f;
+  focus += input.actionDirection.GetNormalized(Vector3(0)) * leadDistance;
   focus.coords[2] = preset.tracking == e_CameraTracking_Player ? 1.15f : 0.8f;
-  if (preset.type == e_CameraPreset_Penalty) {
+  if (preset.type == e_CameraPreset_CosmosWide) {
+    // A television operator frames the phase of play, not only the ball. In
+    // the attacking third, bias the optical centre toward the goal so that
+    // the goalmouth and most of the box remain readable like a real master
+    // shot. The blend fades out through midfield to avoid premature panning.
+    const float attackingSide = input.ballPosition.coords[0] < 0.0f ? -1.0f : 1.0f;
+    const float attackDepth = ClampValue(
+        (std::fabs(input.ballPosition.coords[0]) / pitchHalfW - 0.45f) / 0.45f,
+        0.0f, 1.0f);
+    const Vector3 goalContext(attackingSide * (pitchHalfW - 5.5f), 0.0f, 0.8f);
+    const float contextBlend = attackDepth * 0.36f;
+    focus = focus * (1.0f - contextBlend) + goalContext * contextBlend;
+    const float cameraSide = preset.anchorY < 0.0f ? -1.0f : 1.0f;
+    const float nearTouchline = ClampValue(
+        (cameraSide * input.ballPosition.coords[1] / pitchHalfH - 0.45f) / 0.50f,
+        0.0f, 1.0f);
+    // Near-side play is framed a few metres infield. This keeps supporting
+    // players in view and prevents the camera from pointing almost straight
+    // down at a ball directly below the stand.
+    focus.coords[1] -= cameraSide * nearTouchline * 5.0f;
+    const bool sameSideCorner = input.setPieceActive &&
+        input.setPiece == e_SetPiece_Corner && nearTouchline > 0.65f;
+    if (sameSideCorner) {
+      // Compose between the taker and the penalty-area group instead of
+      // centring either subject. With the wide corner lens this retains the
+      // complete delivery path in one continuous master shot.
+      const Vector3 penaltySpot(input.attackingGoalSide * (pitchHalfW - 11.0f),
+                                0.0f, 1.0f);
+      focus = input.ballPosition * 0.55f + penaltySpot * 0.45f;
+    }
+    // Aim slightly above the old ball-height target. This lifts the optical
+    // axis without sacrificing the grass immediately around the action.
+    focus.coords[2] = 1.2f;
+  } else if (preset.type == e_CameraPreset_Penalty) {
     const float goalSide = input.attackingGoalSide;
     const Vector3 goal(goalSide * pitchHalfW, 0.0f, 1.15f);
     focus = input.ballPosition * 0.42f + goal * 0.58f;
@@ -387,7 +426,22 @@ Vector3 CameraDirector::BuildAnchor(const CameraPreset &preset, const CameraDire
   const float ySide = input.ballPosition.coords[1] < 0.0f ? -1.0f : 1.0f;
   Vector3 anchor(preset.anchorX * pitchHalfW, preset.anchorY * pitchHalfH,
                  preset.height * pitchHalfH);
-  if (preset.type == e_CameraPreset_HighGoalSide || preset.type == e_CameraPreset_LowGoalSide) {
+  if (preset.type == e_CameraPreset_CosmosWide) {
+    // A broadcast rail camera follows the play along the stand, but less than
+    // one-for-one. Keeping this residual separation from the ball produces a
+    // stable three-quarter view instead of flattening into a perpendicular
+    // tactical angle near either penalty area.
+    anchor.coords[0] = ClampValue(input.ballPosition.coords[0] * 0.38f,
+                                  -pitchHalfW * 0.36f, pitchHalfW * 0.36f);
+    const float cameraSide = preset.anchorY < 0.0f ? -1.0f : 1.0f;
+    const float nearTouchline = ClampValue(
+        (cameraSide * input.ballPosition.coords[1] / pitchHalfH - 0.45f) / 0.50f,
+        0.0f, 1.0f);
+    // Dolly away from the near touchline as the ball approaches it. Increasing
+    // the ground separation flattens the viewing angle and removes the
+    // top-down look that a fixed high mount produces in its blind zone.
+    anchor.coords[1] += cameraSide * nearTouchline * 12.0f;
+  } else if (preset.type == e_CameraPreset_HighGoalSide || preset.type == e_CameraPreset_LowGoalSide) {
     anchor.coords[0] *= xSide;
     anchor.coords[1] = std::fabs(anchor.coords[1]) * ySide;
   } else if (preset.type == e_CameraPreset_BehindGoal) {
@@ -456,6 +510,19 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
     ActivatePreset(SelectPreset(input), input);
     initialized = true;
     cut = true;
+  }
+
+  // The referee buffer stops identifying the corner as soon as the ball is
+  // released. Preserve a short delivery phase so the main camera can perform
+  // the real broadcast sequence: wide establishing frame, then an assertive
+  // zoom following the cross into the penalty area.
+  const bool cornerJustTaken = previousSetPiece == e_SetPiece_Corner &&
+      input.setPiece != e_SetPiece_Corner;
+  if (cornerJustTaken && activePreset == e_CameraPreset_CosmosWide) {
+    const float cameraSide = activeAnchor.coords[1] < 0.0f ? -1.0f : 1.0f;
+    const bool fromCameraSide =
+        cameraSide * input.ballPosition.coords[1] > pitchHalfH * 0.65f;
+    if (fromCameraSide) cornerDeliveryUntil_ms = input.time_ms + 1800;
   }
 
   if (clipDuration_ms > 0 && input.time_ms >= clipStart_ms + clipDuration_ms) {
@@ -575,18 +642,64 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
     smoothedFocus = smoothedFocus * (1.0f - focusFactor) + desiredFocus * focusFactor;
   }
 
+  if (!cut && activePreset == e_CameraPreset_CosmosWide) {
+    const Vector3 desiredAnchor = BuildAnchor(preset, input);
+    // The rail follows more slowly than the pan head, preventing ball jitter
+    // and retaining the familiar angled sweep across the pitch.
+    const float railFactor = SmoothFactor(0.72f, input.delta_ms);
+    activeAnchor.coords[0] +=
+        (desiredAnchor.coords[0] - activeAnchor.coords[0]) * railFactor;
+    activeAnchor.coords[1] +=
+        (desiredAnchor.coords[1] - activeAnchor.coords[1]) * railFactor;
+  }
+
   const float finalThird = std::fabs(input.ballPosition.coords[0]) / pitchHalfW;
+  // Start the attacking zoom with 30 metres remaining and reach its full
+  // strength at 25 metres. The narrow ramp makes the response assertive while
+  // interpolation below keeps the lens movement continuous.
+  const float finalThirdZoom = ClampValue(
+      (std::fabs(input.ballPosition.coords[0]) - (pitchHalfW - 30.0f)) / 5.0f,
+      0.0f, 1.0f);
   const float speed = ClampValue(input.ballMovement.GetLength() / 18.0f, 0.0f, 1.0f);
+  // Dataset observation: the main camera stays comparatively wide during a
+  // fast transition, then tightens once possession settles around the box.
+  // This term creates that extra operator zoom without tying it to a cut.
+  const float settledAttackZoom = finalThirdZoom * (1.0f - speed);
+  // The far touchline needs a little more lens than the near side to keep
+  // players equally legible. Derive it from the physical side of the active
+  // mount, independently from progress toward either goal.
+  const float cameraSide = activeAnchor.coords[1] < 0.0f ? -1.0f : 1.0f;
+  const float oppositeTouchlineZoom = ClampValue(
+      ((-cameraSide * input.ballPosition.coords[1]) / pitchHalfH - 0.05f) / 0.85f,
+      0.0f, 1.0f);
   const float ballGroundDistance = (input.ballPosition - activeAnchor).Get2D().GetLength();
   const float nearCamera = ClampValue((28.0f - ballGroundDistance) / 22.0f, 0.0f, 1.0f);
-  // The SoccerNet main operator progressively tightens the lens when play is
-  // on the opposite side of the pitch. The existing near-camera rule already
-  // widens the shot below the mount; this complementary term preserves player
-  // readability when the ball is far away without introducing a camera cut.
+  // The far-side tightening is deliberately modest for COSMOS_WIDE: real
+  // master shots still preserve tactical context around the ball.
   const float farCamera = ClampValue((ballGroundDistance - 48.0f) / 28.0f, 0.0f, 1.0f);
   float desiredFov = preset.fov + speed * 2.5f - finalThird * 3.0f;
+  bool sameSideCornerDelivery = false;
   if (activePreset == e_CameraPreset_CosmosWide) {
-    desiredFov -= farCamera * 15.0f;
+    desiredFov -= farCamera * 3.0f;
+    desiredFov -= finalThirdZoom * 7.5f;
+    desiredFov -= settledAttackZoom * 2.5f;
+    desiredFov -= oppositeTouchlineZoom * 2.0f;
+    if (input.setPieceActive && finalThirdZoom > 0.0f) {
+      desiredFov -= 1.0f;
+    }
+    const bool sameSideCorner = input.setPieceActive &&
+        input.setPiece == e_SetPiece_Corner &&
+        input.ballPosition.coords[1] * activeAnchor.coords[1] > 0.0f;
+    if (sameSideCorner) {
+      // Establishing phase: show the taker and almost the entire penalty area.
+      desiredFov = std::max(desiredFov, preset.maxFov);
+    }
+    sameSideCornerDelivery = input.time_ms < cornerDeliveryUntil_ms;
+    if (sameSideCornerDelivery) {
+      // Delivery phase: close decisively on the moving ball and the group in
+      // the box, matching the fast lens pull used immediately after the kick.
+      desiredFov = 20.5f;
+    }
   }
   if (activePreset == e_CameraPreset_HighGoalSide) {
     const float nearTouchline = std::fabs(input.ballPosition.coords[1]) / pitchHalfH;
@@ -597,21 +710,33 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
   desiredFov += nearCamera * 8.0f;
   desiredFov = ClampValue(desiredFov, preset.minFov, preset.maxFov);
   if (!cut) {
-    const float zoomFactor = SmoothFactor(preset.zoomResponse, input.delta_ms);
+    const float zoomResponse = sameSideCornerDelivery ? 4.8f : preset.zoomResponse;
+    const float zoomFactor = SmoothFactor(zoomResponse, input.delta_ms);
     smoothedFov += (desiredFov - smoothedFov) * zoomFactor;
   }
 
   // When the ball is close to the camera, editorial lead-room must yield to
   // ball retention. Blending here affects framing only; normal tracking
   // resumes smoothly as the play moves away.
-  Vector3 framingFocus = smoothedFocus * (1.0f - nearCamera * 0.88f) +
-                         input.ballPosition * (nearCamera * 0.88f);
+  // COSMOS_WIDE can physically dolly away from its near-side blind zone, so
+  // it needs much less emergency ball centring. Retaining the composed focus
+  // is essential for showing both the winger/corner taker and central players.
+  const float nearBallRetention = nearCamera *
+      (activePreset == e_CameraPreset_CosmosWide ? 0.32f : 0.88f);
+  Vector3 framingFocus = smoothedFocus * (1.0f - nearBallRetention) +
+                         input.ballPosition * nearBallRetention;
   framingFocus.coords[2] = smoothedFocus.coords[2];
   const Vector3 toTarget = framingFocus - activeAnchor;
   const float centerYaw = (Vector3(0, 0, 0) - activeAnchor).GetAngle2D() + 1.5f * kPi;
   float yaw = toTarget.GetAngle2D() + 1.5f * kPi;
-  const float maxPan = preset.maxPanDegrees * kPi / 180.0f;
-  yaw = centerYaw + ClampValue(WrapAngle(yaw - centerYaw), -maxPan, maxPan);
+  if (activePreset != e_CameraPreset_CosmosWide) {
+    const float maxPan = preset.maxPanDegrees * kPi / 180.0f;
+    yaw = centerYaw + ClampValue(WrapAngle(yaw - centerYaw), -maxPan, maxPan);
+  }
+  // COSMOS_WIDE deliberately uses the unconstrained target yaw. Its rail,
+  // outward dolly and infield focus determine the broadcast composition; a
+  // centre-referenced clamp is geometrically invalid at the near corner and
+  // was the remaining source of the apparent locked axis.
   const float horizontalDistance = toTarget.Get2D().GetLength();
   float pitch = std::atan2(horizontalDistance, std::max(0.1f, activeAnchor.coords[2] - smoothedFocus.coords[2]));
   pitch = ClampValue(pitch, preset.minTiltDegrees * kPi / 180.0f,

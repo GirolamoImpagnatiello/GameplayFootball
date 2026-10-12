@@ -37,6 +37,8 @@ namespace blunted {
       virtual void SetMatrix(const std::string &shaderUniformName, const Matrix4 &matrix);
 
       virtual void RenderOverlay2D(const std::vector<Overlay2DQueueEntry> &overlay2DQueue);
+      virtual void RenderOverlay2DDepth(const std::vector<Overlay2DQueueEntry> &overlay2DQueue,
+                                        float cameraNear, float cameraFar);
       virtual void RenderOverlay2D();
       virtual void RenderLights(std::deque<LightQueueEntry> &lightQueue, const Matrix4 &projectionMatrix, const Matrix4 &viewMatrix);
 

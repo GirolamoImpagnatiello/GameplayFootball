@@ -184,6 +184,13 @@ namespace blunted {
 
   void GraphicsCamera_CameraInterpreter::OnPoke() {
 
+    caller->viewBuffer.captureScoreboard.clear();
+    const std::vector<Overlay2DQueueEntry> &overlays =
+      caller->GetGraphicsScene()->GetGraphicsSystem()->GetFrameOverlay2DQueue();
+    for (std::size_t i = 0; i < overlays.size(); ++i) {
+      if (overlays[i].captureScoreboard) caller->viewBuffer.captureScoreboard.push_back(overlays[i]);
+    }
+
     if (caller->viewBuffer.captureRequests.empty()) {
       caller->viewBuffer.captureRequests = caller->GetGraphicsScene()->GetGraphicsSystem()->FetchControlFrameCaptureRequests();
     }

@@ -134,6 +134,7 @@ class CameraDirector {
   unsigned long clipStart_ms;
   unsigned long shotStart_ms;
   unsigned long shotEnd_ms;
+  unsigned long cornerDeliveryUntil_ms;
   e_CameraPresetType singlePreset;
   e_CameraPresetType activePreset;
   e_CameraPresetType scriptedPreset;

@@ -139,7 +139,14 @@ static void ApplyCaptureResolutionPreset(Properties *configuration) {
   }
   int width = 1280;
   int height = 720;
-  if (preset == "1080p" || preset == "fullhd" || preset == "1920x1080") {
+  if (preset == "480p" || preset == "832x480") {
+    // Native Cosmos 480p widescreen profile. Keep the temporal profile tied
+    // to the spatial preset so selecting 480p cannot accidentally retain a
+    // high-rate capture from a previous configuration.
+    width = 832;
+    height = 480;
+    configuration->SetInt("cosmos_capture_fps", 10);
+  } else if (preset == "1080p" || preset == "fullhd" || preset == "1920x1080") {
     width = 1920;
     height = 1080;
   } else if (preset == "4k" || preset == "uhd" || preset == "2160p" ||

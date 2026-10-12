@@ -190,7 +190,9 @@ namespace blunted {
 
     printf("READY\n");
 
-    EnvironmentManager::GetInstance().Pause_ms(1000);
+    // All scheduler, system and worker threads have already been joined above.
+    // Keeping the process alive for another second after the window disappears
+    // makes a normal close look hung and keeps the executable locked for builds.
     EnvironmentManager::GetInstance().Destroy();
 
     TTF_Quit();

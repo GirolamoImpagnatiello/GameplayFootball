@@ -17,6 +17,7 @@ namespace blunted {
     std::deque<LightQueueEntry> visibleLights;
     std::deque<VertexBufferQueueEntry> skyboxes;
     std::vector<ControlFrameCaptureRequest> captureRequests;
+    std::vector<Overlay2DQueueEntry> captureScoreboard;
 
     Matrix4 cameraMatrix;
     float cameraFOV;
@@ -264,6 +265,9 @@ namespace blunted {
           if (isMessage) this->overlay2DQueue.push_back(queueEntry);
         }
       };
+
+      Renderer3DMessage_RenderOverlay2D(const std::vector<Overlay2DQueueEntry> &overlay2DQueue) :
+        Command("r3dmsg_RenderOverlay2D"), overlay2DQueue(overlay2DQueue) {}
 
     protected:
       virtual bool Execute(void *caller = NULL) {

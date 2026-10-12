@@ -151,6 +151,16 @@ namespace blunted {
       renderShadowMaps->Wait();
     }
 
+    // Snapshot the HUD before rendering the camera. Capture uses only entries
+    // tagged as scoreboard; the complete snapshot is rendered to the window.
+    std::vector<Overlay2DQueueEntry> frameOverlays;
+    bool hasOverlay = true;
+    while (hasOverlay) {
+      Overlay2DQueueEntry entry = graphicsSystem->GetOverlay2DQueue().GetMessage(hasOverlay);
+      if (hasOverlay) frameOverlays.push_back(entry);
+    }
+    graphicsSystem->SetFrameOverlay2DQueue(frameOverlays);
+
     // poke camera
     boost::intrusive_ptr<GraphicsTaskCommand_RenderCamera> renderCamera(new GraphicsTaskCommand_RenderCamera());
     taskManager->EnqueueWork(renderCamera, true);
@@ -166,7 +176,7 @@ namespace blunted {
     }
 
     // render the Overlay2D queue
-    boost::intrusive_ptr<Renderer3DMessage_RenderOverlay2D> renderOverlay2D(new Renderer3DMessage_RenderOverlay2D(graphicsSystem->GetOverlay2DQueue()));
+    boost::intrusive_ptr<Renderer3DMessage_RenderOverlay2D> renderOverlay2D(new Renderer3DMessage_RenderOverlay2D(frameOverlays));
     renderer3D->messageQueue.PushMessage(renderOverlay2D, true);
 
   }

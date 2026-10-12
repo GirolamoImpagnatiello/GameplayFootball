@@ -160,6 +160,11 @@ namespace blunted {
         }
       }
       if (!depthFilenames.empty()) {
+        targets.push_back(e_TargetAttachment_None);
+        renderer->SetRenderTargets(targets);
+        targets.clear();
+        renderer->RenderOverlay2DDepth(buffer.captureScoreboard,
+                                       buffer.cameraNearCap, buffer.cameraFarCap);
         renderer->SaveDepthBuffer(depthFilenames, view.width, view.height,
                                   buffer.cameraNearCap, buffer.cameraFarCap);
       }
@@ -318,6 +323,7 @@ namespace blunted {
 
     renderer->SetFramebufferGammaCorrection(true);
     renderer->RenderOverlay2D();
+    renderer->RenderOverlay2D(buffer.captureScoreboard);
     renderer->SetFramebufferGammaCorrection(false);
 
     std::vector<std::string> rgbFilenames;

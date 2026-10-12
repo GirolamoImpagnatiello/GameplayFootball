@@ -164,11 +164,32 @@ context-aware, seed-reproducible selection. Each weight can be overridden with
 `camera_<PRESET>_fov`. `camera_close_up_enabled` defaults to false and close-ups
 are eligible only while play is stopped.
 
-`COSMOS_WIDE` is calibrated against the lateral main-broadcast framing in the
-SoccerNet Barcelona-Manchester City 2016/17 reference. It uses the same mount,
-zoom envelope, and action tracking as `MAIN_BROADCAST`, while remaining a
-continuous single-camera shot for Cosmos tests. It intentionally does not
-guarantee that both goals or all 22 players remain visible at once.
+`COSMOS_WIDE` reproduces a television master camera in the lower central press
+tier. Its mount is set slightly behind the near touchline and glides along the
+stand to follow the ball. It deliberately covers only part of the ball's
+longitudinal travel, preserving the diagonal three-quarter perspective of
+standard sideline coverage instead of becoming a flat tactical view.
+Its long-lens 18--34 degree zoom envelope frames roughly the final third during
+an attack, with broadcast-sized players rather than an all-pitch tactical
+view. The lens tightens decisively as play crosses from 30 to 25 metres from
+goal. A separate progressive adjustment tightens the lens when the ball
+moves toward the touchline opposite the camera, keeping far-side players
+legible. On the touchline below the camera, the mount instead dollies outward
+and aims slightly infield to retain a shallow broadcast angle. Near-side
+corners are composed between the taker and the penalty area so both remain in
+shot. The rail position and composed focus preserve the three-quarter view,
+while the pan head remains free to follow play through the complete near-corner
+arc without any centre-referenced yaw clamp. Its near-side wide envelope opens
+to 40 degrees so the ball and penalty-area group remain visible together. At
+the kick, a retained
+1.8-second delivery phase drives a faster lens pull from the establishing view
+toward the ball and the penalty-area group. Camera behaviour is also
+action-aware: fast transitions stay wider
+and receive additional look-ahead, while settled attacks and offensive restarts
+tighten around the box. Phase-of-play tracking adds goal-side lead room so the
+goal remains readable. It remains a continuous single-camera shot for Cosmos
+tests and does not guarantee that both goals or all 22 players remain visible
+at once.
 
 The team-aware semantic palette uses dark navy `[8,18,40]` for home outfield
 players, light pink `[255,166,213]` for away outfield players, orange
@@ -197,8 +218,10 @@ first frame to the last.
 composition shown in the camera experiment. Select any of these views through
 `camera_single_preset`; no code change is required.
 
-Direct capture supports native `720p` (1280x720), `1080p` (1920x1080), and
-`4k` (3840x2160) framebuffer presets through `cosmos_capture_resolution`.
+Direct capture supports native `480p` (832x480 at 10 fps), `720p` (1280x720),
+`1080p` (1920x1080), and `4k` (3840x2160) framebuffer presets through
+`cosmos_capture_resolution`. Selecting `480p` also sets
+`cosmos_capture_fps=10`, making it a complete spatial/temporal capture mode.
 The selected dimensions apply identically to RGB, depth, and segmentation and
 are written to `metadata.json`. `cosmos_model_resolution` remains independent:
 high-resolution masters can therefore be retained while a 720-tier Cosmos
@@ -430,6 +453,11 @@ complete scene control. `cosmos_transfer_spec.json` automatically adds the edge
 input with `preset_edge_threshold=low`, and `metadata.json` records profile,
 instance encoding and edge encoding. Use `cosmos_control_profile=semantic` to
 retain the full semantic palette described above.
+
+Cosmos captures retain the broadcast score/time bar in RGB and in all three
+controls (depth, segmentation and edge), so its position and changing text stay
+aligned frame by frame. The radar/minimap and the separate TV logo in the upper
+right remain excluded from every captured stream.
 
 Depth capture defaults to a global metric mapping. The renderer reconstructs
 camera-space Z from the OpenGL depth buffer using each frame's projection near

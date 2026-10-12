@@ -202,13 +202,13 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
         }
 
       } else if (team->GetController()->GetSetPieceType() == e_SetPiece_Corner) {
-        if (random(0.0f, 1.0f) > 0.3f) {
-          actionCommand.desiredFunctionType = e_FunctionType_HighPass;
-          desiredTargetPosition = Vector3((pitchHalfW * -team->GetSide()) * (0.99f - random(0.0f, 0.12f)), random(-10.0f, 10.0f), 0.0f);
-        } else {
-          actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
-          desiredTargetPosition = Vector3((pitchHalfW * -team->GetSide()) * 0.8f, player->GetPosition().coords[1] * 0.8f, 0.0f);
-        }
+        // Deliver into a useful scoring corridor rather than aiming at the
+        // goal line. The old target could be less than a metre from goal,
+        // which made high passes strike the crossbar or carry out of play.
+        actionCommand.desiredFunctionType = e_FunctionType_HighPass;
+        const float goalX = -team->GetSide() * pitchHalfW;
+        desiredTargetPosition = Vector3(goalX + team->GetSide() * random(8.0f, 13.0f),
+                                        random(-6.5f, 6.5f), 0.0f);
 
       } else if (team->GetController()->GetSetPieceType() == e_SetPiece_ThrowIn) {
         actionCommand.desiredFunctionType = e_FunctionType_ShortPass;
@@ -242,6 +242,8 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
             team->GetActivePlayers(candidates);
             float bestTargetRating = -1.0f;
             const Vector3 goal(-team->GetSide() * pitchHalfW, 0, 0);
+            const bool cornerDelivery =
+                team->GetController()->GetSetPieceType() == e_SetPiece_Corner;
             const bool freeKickDelivery =
                 team->GetController()->GetSetPieceType() == e_SetPiece_FreeKick;
             const float offsideLine = freeKickDelivery
@@ -254,9 +256,25 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
                                           offsideLine + 0.2f) continue;
               const float goalDistance = (candidate->GetPosition() - goal).GetLength();
               if (goalDistance > 23.0f || fabs(candidate->GetPosition().coords[1]) > 15.0f) continue;
-              const float rating = candidate->GetStat("technical_header") * 0.45f +
-                  (1.0f - NormalizedClamp(goalDistance, 6.0f, 23.0f)) * 0.35f +
-                  (1.0f - NormalizedClamp(fabs(candidate->GetPosition().coords[1]), 0.0f, 15.0f)) * 0.20f;
+              float rating;
+              if (cornerDelivery) {
+                // Prefer a teammate around the penalty spot / central six-to-
+                // twelve metre channel. Penalizing both the goal line and the
+                // edge of the box prevents crossbar hits and aimless crosses.
+                const float goalDepth = fabs(candidate->GetPosition().coords[0] - goal.coords[0]);
+                const float idealDepth = 10.5f;
+                const float depthRating = 1.0f - NormalizedClamp(
+                    fabs(goalDepth - idealDepth), 0.0f, 10.0f);
+                const float centralRating = 1.0f - NormalizedClamp(
+                    fabs(candidate->GetPosition().coords[1]), 0.0f, 15.0f);
+                rating = candidate->GetStat("technical_header") * 0.45f +
+                    depthRating * 0.38f + centralRating * 0.17f;
+                if (goalDepth < 5.0f || goalDepth > 19.0f) rating -= 0.65f;
+              } else {
+                rating = candidate->GetStat("technical_header") * 0.45f +
+                    (1.0f - NormalizedClamp(goalDistance, 6.0f, 23.0f)) * 0.35f +
+                    (1.0f - NormalizedClamp(fabs(candidate->GetPosition().coords[1]), 0.0f, 15.0f)) * 0.20f;
+              }
               if (rating > bestTargetRating) {
                 bestTargetRating = rating;
                 actionCommand.touchInfo.forcedTargetPlayer = candidate;

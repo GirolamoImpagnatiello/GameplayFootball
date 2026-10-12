@@ -64,6 +64,14 @@ namespace blunted {
 
     WaitForBackBufferSaves();
 
+    // Overlay entries retain texture resources. Release them while the
+    // renderer is still alive so Texture::~Texture can enqueue its GL cleanup
+    // safely. Leaving the last rendered frame in this vector until the
+    // GraphicsSystem destructor used to access the already deleted renderer
+    // and leave the process hanging after the window had closed.
+    overlay2DQueue.Purge();
+    frameOverlay2DQueue.clear();
+
     textureResourceManager.reset();
     vertexBufferResourceManager.reset();
 
@@ -105,6 +113,14 @@ namespace blunted {
 
   MessageQueue<Overlay2DQueueEntry> &GraphicsSystem::GetOverlay2DQueue() {
     return overlay2DQueue;
+  }
+
+  void GraphicsSystem::SetFrameOverlay2DQueue(const std::vector<Overlay2DQueueEntry> &entries) {
+    frameOverlay2DQueue = entries;
+  }
+
+  const std::vector<Overlay2DQueueEntry> &GraphicsSystem::GetFrameOverlay2DQueue() const {
+    return frameOverlay2DQueue;
   }
 
   void GraphicsSystem::RequestBackBufferSave(const std::string &filename) {

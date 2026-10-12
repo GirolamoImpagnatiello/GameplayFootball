@@ -270,13 +270,16 @@ void WriteCapturePixels(const std::vector<std::string> &filenames,
   if (!surface) throw std::runtime_error("Could not create capture surface");
   for (std::size_t i = 0; i < filenames.size(); ++i) {
     const std::string &filename = filenames[i];
-    if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".mkv") {
+    const bool videoFile = filename.size() >= 4 &&
+      (filename.substr(filename.size() - 4) == ".mkv" ||
+       filename.substr(filename.size() - 4) == ".mp4");
+    if (videoFile) {
       auto &writer = captureVideos[filename];
       if (!writer) {
-        const bool rgbStream = filename.size() >= 15 &&
-          filename.substr(filename.size() - 15) == "control_rgb.mkv";
-        const std::string codec = rgbStream
-          ? GetConfiguration()->Get("cosmos_rgb_video_codec", "h264") : "ffv1";
+        const bool mp4Stream = filename.substr(filename.size() - 4) == ".mp4";
+        const bool rgbStream = filename.find("control_rgb.") != std::string::npos;
+        const std::string codec = mp4Stream ? "h264" :
+          (rgbStream ? GetConfiguration()->Get("cosmos_rgb_video_codec", "h264") : "ffv1");
         writer.reset(new CaptureVideoWriter(
           GetConfiguration()->Get("cosmos_ffmpeg_path", "ffmpeg.exe"), filename,
           width, height, GetConfiguration()->GetInt("cosmos_capture_fps", 25),
@@ -649,6 +652,7 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
     mapping.glDisable(GL_CULL_FACE);
 
     UseShader("overlay");
+    SetUniformFloat("overlay", "captureDepth", 0.0f);
 
     // VK: TODO: check window size instead?
     Matrix4 orthoMatrix = CreateOrthoMatrix(0, context_width, context_height, 0, 0.1, 10);
@@ -675,6 +679,53 @@ bool QueueAsyncPixelRead(const std::vector<std::string> &filenames, int width, i
     mapping.glEnable(GL_CULL_FACE);
     SetDepthMask(true);
     mapping.glDisable(GL_BLEND);
+  }
+
+  void OpenGLRenderer3D::RenderOverlay2DDepth(const std::vector<Overlay2DQueueEntry> &overlay2DQueue,
+                                               float cameraNear, float cameraFar) {
+    if (overlay2DQueue.empty()) return;
+
+    mapping.glDisable(GL_BLEND);
+    mapping.glEnable(GL_DEPTH_TEST);
+    SetDepthFunction(e_DepthFunction_Always);
+    SetDepthMask(true);
+    mapping.glDisable(GL_CULL_FACE);
+
+    UseShader("overlay");
+    SetUniformFloat("overlay", "captureDepth", 1.0f);
+    const float outputNear = std::max(0.001f,
+      GetConfiguration()->GetReal("cosmos_depth_near_m", 1.0f));
+    const float outputFar = std::max(outputNear + 0.001f,
+      GetConfiguration()->GetReal("cosmos_depth_far_m", 220.0f));
+    const float scoreboardGray = std::max(0.0f, std::min(255.0f,
+      GetConfiguration()->GetReal("cosmos_scoreboard_depth_gray", 48.0f)));
+    const float normalized = scoreboardGray / 255.0f;
+    const float scoreboardZ = outputFar - normalized * (outputFar - outputNear);
+    const float safeNear = std::max(0.0001f, cameraNear);
+    const float safeFar = std::max(safeNear + 0.0001f, cameraFar);
+    const float deviceDepth = safeFar * (scoreboardZ - safeNear) /
+      std::max(scoreboardZ * (safeFar - safeNear), 0.0001f);
+    SetUniformFloat("overlay", "captureDepthValue",
+                    std::max(0.0f, std::min(deviceDepth, 1.0f)));
+    Matrix4 orthoMatrix = CreateOrthoMatrix(0, context_width, context_height, 0, 0.1, 10);
+    SetMatrix("projection", orthoMatrix);
+    mapping.glBindVertexArray(overlayBuffer.vertexArrayID);
+    SetTextureUnit(0);
+
+    for (unsigned int i = 0; i < overlay2DQueue.size(); ++i) {
+      const Overlay2DQueueEntry &queueEntry = overlay2DQueue[i];
+      Matrix4 modelMatrix(MATRIX4_IDENTITY);
+      modelMatrix.SetTranslation(Vector3(queueEntry.position[0], queueEntry.position[1], -1.0f));
+      modelMatrix.SetScale(Vector3(queueEntry.size[0], queueEntry.size[1], 1.0f));
+      SetMatrix("model", modelMatrix);
+      BindTexture(queueEntry.texture->GetResource()->GetID());
+      mapping.glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
+
+    mapping.glBindVertexArray(0);
+    SetUniformFloat("overlay", "captureDepth", 0.0f);
+    SetDepthFunction(e_DepthFunction_Less);
+    mapping.glEnable(GL_CULL_FACE);
   }
 
   void OpenGLRenderer3D::RenderOverlay2D() {

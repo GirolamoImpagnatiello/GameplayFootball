@@ -27,6 +27,7 @@ namespace blunted {
     boost::intrusive_ptr < Resource<Texture> > texture;
     int position[2];
     int size[2];
+    bool captureScoreboard;
   };
 
   struct Renderer3DMaterial {
@@ -225,6 +226,8 @@ namespace blunted {
       virtual void SetMatrix(const std::string &shaderUniformName, const Matrix4 &matrix) = 0;
 
       virtual void RenderOverlay2D(const std::vector<Overlay2DQueueEntry> &overlay2DQueue) = 0;
+      virtual void RenderOverlay2DDepth(const std::vector<Overlay2DQueueEntry> &overlay2DQueue,
+                                        float cameraNear, float cameraFar) = 0;
       virtual void RenderOverlay2D() = 0;
       virtual void RenderLights(std::deque<LightQueueEntry> &lightQueue, const Matrix4 &projectionMatrix, const Matrix4 &viewMatrix) = 0;
 

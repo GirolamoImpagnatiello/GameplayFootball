@@ -18,7 +18,7 @@ namespace blunted {
   class GraphicsOverlay2D : public GraphicsObject {
 
     public:
-      GraphicsOverlay2D(GraphicsScene *graphicsScene);
+      GraphicsOverlay2D(GraphicsScene *graphicsScene, const std::string &name);
       virtual ~GraphicsOverlay2D();
 
       virtual boost::intrusive_ptr<Interpreter> GetInterpreter(e_ObjectType objectType);
@@ -27,6 +27,7 @@ namespace blunted {
 
       int position[2];
       int size[2];
+      bool captureScoreboard;
 
     protected:
 

@@ -17,8 +17,13 @@ in vec2 TexCoords;
 out vec4 stdout;
 
 uniform sampler2D ourTexture;
+uniform float captureDepth;
+uniform float captureDepthValue;
 
 void main()
 {
-    stdout = texture(ourTexture, TexCoords);
+    vec4 color = texture(ourTexture, TexCoords);
+    if (color.a <= 0.01) discard;
+    if (captureDepth > 0.5) gl_FragDepth = captureDepthValue;
+    stdout = color;
 }

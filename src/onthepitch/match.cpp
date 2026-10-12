@@ -1566,11 +1566,12 @@ void Match::ScheduleCosmosFrameCapture() {
   }
   const std::string captureFormat = GetConfiguration()->Get("cosmos_capture_format", "png");
   if (captureFormat == "video" || captureFormat == "video_and_png") {
-    request.rgbFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_rgb.mkv").string();
-    request.depthFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_depth.mkv").string();
-    request.segmentationFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_seg.mkv").string();
+    const std::string videoExtension = lucaInstanceControls ? ".mp4" : ".mkv";
+    request.rgbFilename = (boost::filesystem::path(cosmosCaptureDirectory) / ("control_rgb" + videoExtension)).string();
+    request.depthFilename = (boost::filesystem::path(cosmosCaptureDirectory) / ("control_depth" + videoExtension)).string();
+    request.segmentationFilename = (boost::filesystem::path(cosmosCaptureDirectory) / ("control_seg" + videoExtension)).string();
     if (lucaInstanceControls) {
-      request.edgeFilename = (boost::filesystem::path(cosmosCaptureDirectory) / "control_edge.mkv").string();
+      request.edgeFilename = (boost::filesystem::path(cosmosCaptureDirectory) / ("control_edge" + videoExtension)).string();
     }
     if (captureFormat == "video_and_png") {
       ControlFrameCaptureRequest pngRequest;
@@ -1722,7 +1723,7 @@ void Match::FlushCosmosCaptureMetadata() {
       if (controlProfile == "luca_instance") {
         metadata << "  \"edge_directory\": \"edge\",\n";
       }
-      const std::string extension = format == "png" ? ".mp4" : ".mkv";
+      const std::string extension = (format == "png" || controlProfile == "luca_instance") ? ".mp4" : ".mkv";
       metadata << "  \"rgb_video\": " << Quote("control_rgb" + extension) << ",\n";
       metadata << "  \"depth_video\": " << Quote("control_depth" + extension) << ",\n";
       metadata << "  \"segmentation_video\": " << Quote("control_seg" + extension) << ",\n";
@@ -2085,7 +2086,7 @@ void Match::UpdateIngameCamera() {
 
   int camMethod = 1; // 1 == wide, 2 == birds-eye, 3 == tele
 
-  if (!IsGoalScored() || (IsGoalScored() && goalScoredTimer < 1000)) {
+  if (!IsGoalScored()) {
 
     if (camMethod == 1) {
 
@@ -2271,9 +2272,10 @@ void Match::UpdateDirectedCamera() {
   cameraPhysicalId = output.cameraId;
   if (output.cut && !goalCameraWasActive) cameraCutPending = true;
 
-  // The scorer shot remains an editorial override, just as it was with the
-  // legacy match camera.
-  if (IsGoalScored() && goalScoredTimer >= 1000) {
+  // Cut directly to the scorer in the same update that registers the goal.
+  // Waiting one second allowed the kickoff restart to move the director's
+  // target to midfield first, producing a confusing intermediate shot.
+  if (IsGoalScored()) {
     Vector3 targetPos = ball->Predict(0).Get2D();
     if (lastGoalScorer) targetPos = lastGoalScorer->GetPosition();
     const radian rotation = static_cast<float>(goalScoredTimer) * 0.0005f;

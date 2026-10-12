@@ -44,6 +44,8 @@ namespace blunted {
       boost::shared_ptr < ResourceManager<VertexBuffer> > GetVertexBufferResourceManager();
 
       MessageQueue<Overlay2DQueueEntry> &GetOverlay2DQueue();
+      void SetFrameOverlay2DQueue(const std::vector<Overlay2DQueueEntry> &entries);
+      const std::vector<Overlay2DQueueEntry> &GetFrameOverlay2DQueue() const;
 
       void GetContextSize(int &width, int &height, int &bpp) { width = this->width; height = this->height; bpp = this->bpp; }
       Vector3 GetContextSize() { return Vector3(width, height, bpp); }
@@ -72,6 +74,7 @@ namespace blunted {
       boost::shared_ptr < ResourceManager<VertexBuffer> > vertexBufferResourceManager;
 
       MessageQueue<Overlay2DQueueEntry> overlay2DQueue;
+      std::vector<Overlay2DQueueEntry> frameOverlay2DQueue;
       boost::mutex backBufferSaveMutex;
       std::vector<std::string> backBufferSaveRequests;
       boost::mutex controlFrameCaptureMutex;
