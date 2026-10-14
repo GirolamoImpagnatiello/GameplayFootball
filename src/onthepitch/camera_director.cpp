@@ -125,7 +125,7 @@ void CameraDirector::BuildPresets(Properties *configuration) {
   // while the camera follows play toward either goal.
   presets[e_CameraPreset_CosmosWide] = MakePreset(
       e_CameraPreset_CosmosWide, "COSMOS_WIDE", 0.0f, -1.22f, 0.42f,
-      29.0f, 18.0f, 40.0f, 62.0f, 14.0f, 82.0f, 2.0f, 1.35f, 0.0f, 3600.0f, 3600.0f,
+      27.0f, 17.0f, 40.0f, 62.0f, 14.0f, 82.0f, 2.0f, 1.35f, 0.0f, 3600.0f, 3600.0f,
       e_CameraTracking_Action);
   // Fixed lateral diagnostic view for temporal-consistency tests. It keeps
   // the visual language of MAIN_BROADCAST. A moderately wide lens lets the
@@ -356,10 +356,14 @@ Vector3 CameraDirector::BuildFocus(const CameraPreset &preset, const CameraDirec
     const float nearTouchline = ClampValue(
         (cameraSide * input.ballPosition.coords[1] / pitchHalfH - 0.45f) / 0.50f,
         0.0f, 1.0f);
+    const float goalLineDepth = ClampValue(
+        (std::fabs(input.ballPosition.coords[0]) / pitchHalfW - 0.55f) / 0.40f,
+        0.0f, 1.0f);
     // Near-side play is framed a few metres infield. This keeps supporting
     // players in view and prevents the camera from pointing almost straight
     // down at a ball directly below the stand.
-    focus.coords[1] -= cameraSide * nearTouchline * 5.0f;
+    focus.coords[1] -= cameraSide * nearTouchline *
+        (5.0f - goalLineDepth * 1.5f);
     const bool sameSideCorner = input.setPieceActive &&
         input.setPiece == e_SetPiece_Corner && nearTouchline > 0.65f;
     if (sameSideCorner) {
@@ -437,10 +441,23 @@ Vector3 CameraDirector::BuildAnchor(const CameraPreset &preset, const CameraDire
     const float nearTouchline = ClampValue(
         (cameraSide * input.ballPosition.coords[1] / pitchHalfH - 0.45f) / 0.50f,
         0.0f, 1.0f);
+    const float oppositeTouchline = ClampValue(
+        ((-cameraSide * input.ballPosition.coords[1]) / pitchHalfH - 0.35f) / 0.55f,
+        0.0f, 1.0f);
+    const float goalLineDepth = ClampValue(
+        (std::fabs(input.ballPosition.coords[0]) / pitchHalfW - 0.55f) / 0.40f,
+        0.0f, 1.0f);
     // Dolly away from the near touchline as the ball approaches it. Increasing
     // the ground separation flattens the viewing angle and removes the
-    // top-down look that a fixed high mount produces in its blind zone.
-    anchor.coords[1] += cameraSide * nearTouchline * 12.0f;
+    // top-down look that a fixed high mount produces in its blind zone. The
+    // extra goal-line term is essential at the camera-side corner, where the
+    // longitudinal rail offset otherwise consumes much of the useful frame.
+    anchor.coords[1] += cameraSide * nearTouchline *
+        (12.0f + goalLineDepth * 8.0f);
+    // On the opposite wing there is no blind zone, so move the mount slightly
+    // toward the pitch. Combined with the longer lens below this makes remote
+    // players more readable without losing the broadcast diagonal.
+    anchor.coords[1] -= cameraSide * oppositeTouchline * 4.5f;
   } else if (preset.type == e_CameraPreset_HighGoalSide || preset.type == e_CameraPreset_LowGoalSide) {
     anchor.coords[0] *= xSide;
     anchor.coords[1] = std::fabs(anchor.coords[1]) * ySide;
@@ -647,10 +664,11 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
     // The rail follows more slowly than the pan head, preventing ball jitter
     // and retaining the familiar angled sweep across the pitch.
     const float railFactor = SmoothFactor(0.72f, input.delta_ms);
+    const float lateralRailFactor = SmoothFactor(1.35f, input.delta_ms);
     activeAnchor.coords[0] +=
         (desiredAnchor.coords[0] - activeAnchor.coords[0]) * railFactor;
     activeAnchor.coords[1] +=
-        (desiredAnchor.coords[1] - activeAnchor.coords[1]) * railFactor;
+        (desiredAnchor.coords[1] - activeAnchor.coords[1]) * lateralRailFactor;
   }
 
   const float finalThird = std::fabs(input.ballPosition.coords[0]) / pitchHalfW;
@@ -680,10 +698,10 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
   float desiredFov = preset.fov + speed * 2.5f - finalThird * 3.0f;
   bool sameSideCornerDelivery = false;
   if (activePreset == e_CameraPreset_CosmosWide) {
-    desiredFov -= farCamera * 3.0f;
+    desiredFov -= farCamera * 3.5f;
     desiredFov -= finalThirdZoom * 7.5f;
     desiredFov -= settledAttackZoom * 2.5f;
-    desiredFov -= oppositeTouchlineZoom * 2.0f;
+    desiredFov -= oppositeTouchlineZoom * 5.5f;
     if (input.setPieceActive && finalThirdZoom > 0.0f) {
       desiredFov -= 1.0f;
     }
@@ -721,8 +739,14 @@ CameraDirectorOutput CameraDirector::Update(const CameraDirectorInput &input) {
   // COSMOS_WIDE can physically dolly away from its near-side blind zone, so
   // it needs much less emergency ball centring. Retaining the composed focus
   // is essential for showing both the winger/corner taker and central players.
-  const float nearBallRetention = nearCamera *
-      (activePreset == e_CameraPreset_CosmosWide ? 0.32f : 0.88f);
+  const float nearTouchlineRetention = activePreset == e_CameraPreset_CosmosWide
+      ? ClampValue(
+          (cameraSide * input.ballPosition.coords[1] / pitchHalfH - 0.45f) / 0.50f,
+          0.0f, 1.0f) * 0.22f
+      : 0.0f;
+  const float nearBallRetention = std::max(
+      nearCamera * (activePreset == e_CameraPreset_CosmosWide ? 0.32f : 0.88f),
+      nearTouchlineRetention);
   Vector3 framingFocus = smoothedFocus * (1.0f - nearBallRetention) +
                          input.ballPosition * nearBallRetention;
   framingFocus.coords[2] = smoothedFocus.coords[2];

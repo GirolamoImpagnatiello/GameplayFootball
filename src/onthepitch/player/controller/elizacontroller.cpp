@@ -911,6 +911,10 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
       fabs(player->GetPosition().coords[1]) > 11.0f;
   const float crossAggression = clamp(
       GetConfiguration()->GetReal("ai_cross_aggression", 1.0f), 0.6f, 1.6f);
+  const unsigned long minimumOnBallTime_ms = static_cast<unsigned long>(clamp(
+      GetConfiguration()->GetReal("ai_min_on_ball_ms", 900.0f), 0.0f, 3000.0f));
+  const bool settledOnBall =
+      CastPlayer()->GetPossessionDuration_ms() >= static_cast<int>(minimumOnBallTime_ms);
 
   // first selection
   float forwardSpaceWeight = 0.4f;
@@ -1147,7 +1151,11 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
       attackingDecisionUrgency < 0.62f && bestMateRating.player != 0 &&
       bestMateRating.passRating > 0.48f &&
       bestMateRating.goalThreat > currentGoalThreat + 0.06f;
-  if (distanceToGoal < maxShotDistance && shotAngleRating > 0.0f && balanceRating > requiredBalance) {
+  // Shooting remains independent from the deliberate build-up constraints.
+  // The slower profile changes how the team reaches the chance, not whether a
+  // player is allowed to exploit a valid shooting lane once it appears.
+  if (distanceToGoal < maxShotDistance && shotAngleRating > 0.0f &&
+      balanceRating > requiredBalance) {
     float odds1 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(), -2.4f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
     float odds2 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(),  0.0f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
     float odds3 = _GetPassingOdds(Vector3((pitchHalfW + 1.0f) * -team->GetSide(),  2.4f, 0), e_FunctionType_Shot, opponentPlayerImages, 3.0f);
@@ -1202,7 +1210,9 @@ void ElizaController::GetOnTheBallCommands(std::vector<PlayerCommand> &commandQu
   const bool prepareFinish = distanceToGoal < maxShotDistance &&
       shotAngleRating > 0.05f && balanceRating <= requiredBalance &&
       !clearAssistAvailable;
-  if (bestMateRating.player != 0 && !prepareFinish) {
+  const bool underImmediatePressure = closestOpponentDistance < 2.2f;
+  if (bestMateRating.player != 0 && !prepareFinish &&
+      (settledOnBall || underImmediatePressure)) {
     _AddPass(commandQueue, bestMateRating.player, bestMateRating.passType);
   }
 

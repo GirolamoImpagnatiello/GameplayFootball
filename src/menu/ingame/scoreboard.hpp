@@ -29,6 +29,8 @@ class Gui2ScoreBoard : public Gui2View {
     void SetGoalCount(int teamID, int goalCount);
 
   protected:
+    void LayoutContent();
+
     boost::intrusive_ptr<Image2D> image;
 
     int w, h;
@@ -44,8 +46,6 @@ class Gui2ScoreBoard : public Gui2View {
     Gui2Caption *goalCountCaption[2];
 
     Gui2Image *leagueLogo;
-    Gui2Image *teamLogo[2];
-
     Gui2Image *tvLogo;
 };
 

@@ -357,6 +357,16 @@ time. The legacy normalized `match_duration` value is used only when the new
 setting is absent. Existing tracking exporters remain configurable through
 `blender_tracking_export_*` and `cosmos_capture_*`.
 
+`ai_gameplay_profile` selects the overall AI pace. `fast` restores the previous
+direct style; `deliberate` (also accepted as `soft`) is intended for long dataset
+clips and makes the AI construct attacks before shooting. The deliberate profile
+uses 900 ms on the ball, lower vertical aggression and more patient final-third
+decisions. These rules slow down passing and the development of possession, but do not restrict the
+shooting module: the original 30-metre range remains available, while the
+`deliberate` quality threshold is `0.56` (`fast` uses `0.48`). A valid shooting
+lane can therefore be exploited immediately, but weak attempts are discarded.
+Any individual `ai_*` key can still override a profile value.
+
 Set `match_extra_time_enabled=false` to finish after the second half regardless
 of the score. The default is `true` for compatibility with older configurations.
 

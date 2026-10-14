@@ -20,56 +20,53 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match) :
   // clock, team names and score remain legible in 480p/720p captures.
   height_percent = 5.5f;
 
-  Vector3 textColor = 255;
-  Vector3 textOutlineColor = 0;
+  const Vector3 textColor(245, 248, 252);
+  const Vector3 scoreColor(205, 255, 20);
+  const Vector3 timeColor(255, 255, 255);
+  const Vector3 textOutlineColor(4, 12, 28);
 
   goalCount[0] = 0;
   goalCount[1] = 0;
   int x, y, w, h;
   windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);
 
-  // percentages
-  float xOffset[9];
-  xOffset[0] = 1; // league logo
-  xOffset[1] = 5.5f; // time
-  xOffset[2] = 15; // t1 logo
-  xOffset[3] = 19.5f; // t1 name
-  xOffset[4] = 25.5f; // t1 score
-  xOffset[5] = 30; // t2 logo
-  xOffset[6] = 34.5f; // t2 name
-  xOffset[7] = 40.5f; // t2 score
-  xOffset[8] = 45.5f; // end
-  float relToAbsMultiplier = w / (width_percent * 1.0f);
+  // Clear OCR-friendly broadcast hierarchy:
+  // TIME | HOME NAME | HOME SCORE | LEAGUE | AWAY SCORE | AWAY NAME
+  const float barWidth = 47.0f;
+  const float timeX = 1.2f;
+  const float homeNameX = 10.0f;
+  const float homeScoreX = 21.0f;
+  const float leagueX = 25.8f;
+  const float awayScoreX = 31.5f;
+  const float awayNameX = 35.0f;
   content_yOffset = 0.2f;
-  float content_xOffset = 0.2f;
 
-  float bgAlpha = 100.0f;
-
-  Gui2Image *bg = new Gui2Image(windowManager, "image_scoreboard_bg", 0, 0, xOffset[8] + 1, height_percent);
-  bg->LoadImage("media/menu/scoreboard_bg.png");
+  Gui2Image *bg = new Gui2Image(windowManager, "image_scoreboard_bg", 0, 0, barWidth, height_percent);
+  bg->LoadImage("media/menu/scoreboard_bg_broadcast_v2.png");
   this->AddView(bg);
   bg->Show();
 
-  leagueLogo = new Gui2Image(windowManager, "game_scoreboard_leaguelogo", xOffset[0], 0, height_percent / windowManager->GetAspectRatio(), height_percent);
+  leagueLogo = new Gui2Image(windowManager, "game_scoreboard_leaguelogo", leagueX, 0,
+                             height_percent / windowManager->GetAspectRatio(), height_percent);
   this->AddView(leagueLogo);
   leagueLogo->LoadImage("media/menu/league.png"); // todo: actual league picca
   leagueLogo->Show();
 
-  timeCaption = new Gui2Caption(windowManager, "game_scoreboard_timecaption", xOffset[1] + content_xOffset, 0, 5, height_percent * 0.9f, "0:00");
-  teamNameCaption[0] = new Gui2Caption(windowManager, "game_scoreboard_team1name", xOffset[3] + content_xOffset, 0, 5, height_percent * 0.9f, match->GetTeam(0)->GetTeamData()->GetShortName());
-  teamNameCaption[1] = new Gui2Caption(windowManager, "game_scoreboard_team2name", xOffset[6] + content_xOffset, 0, 5, height_percent * 0.9f, match->GetTeam(1)->GetTeamData()->GetShortName());
-  goalCountCaption[0] = new Gui2Caption(windowManager, "game_scoreboard_team1goals", xOffset[4] + content_xOffset, 0, 5, height_percent * 0.9f, "0");
-  goalCountCaption[1] = new Gui2Caption(windowManager, "game_scoreboard_team2goals", xOffset[7] + content_xOffset, 0, 5, height_percent * 0.9f, "0");
+  timeCaption = new Gui2Caption(windowManager, "game_scoreboard_timecaption", timeX, 0, 6.0f, height_percent * 0.9f, "0:00");
+  teamNameCaption[0] = new Gui2Caption(windowManager, "game_scoreboard_team1name", homeNameX, 0, 8.5f, height_percent * 0.9f, match->GetTeam(0)->GetTeamData()->GetShortName());
+  teamNameCaption[1] = new Gui2Caption(windowManager, "game_scoreboard_team2name", awayNameX, 0, 8.5f, height_percent * 0.9f, match->GetTeam(1)->GetTeamData()->GetShortName());
+  goalCountCaption[0] = new Gui2Caption(windowManager, "game_scoreboard_team1goals", homeScoreX, 0, 3.0f, height_percent * 0.9f, "0");
+  goalCountCaption[1] = new Gui2Caption(windowManager, "game_scoreboard_team2goals", awayScoreX, 0, 3.0f, height_percent * 0.9f, "0");
 
-  timeCaption->SetColor(textColor);
+  timeCaption->SetColor(timeColor);
   timeCaption->SetOutlineColor(textOutlineColor);
   teamNameCaption[0]->SetColor(textColor);
   teamNameCaption[0]->SetOutlineColor(textOutlineColor);
   teamNameCaption[1]->SetColor(textColor);
   teamNameCaption[1]->SetOutlineColor(textOutlineColor);
-  goalCountCaption[0]->SetColor(textColor);
+  goalCountCaption[0]->SetColor(scoreColor);
   goalCountCaption[0]->SetOutlineColor(textOutlineColor);
-  goalCountCaption[1]->SetColor(textColor);
+  goalCountCaption[1]->SetColor(scoreColor);
   goalCountCaption[1]->SetOutlineColor(textOutlineColor);
 
   // Keep the unrelated broadcaster logo compact while the score strip grows.
@@ -92,16 +89,7 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match) :
 
   SetGoalCount(0, 0);
   SetGoalCount(1, 0);
-
-  teamLogo[0] = new Gui2Image(windowManager, "game_scoreboard_team1logo", xOffset[2], 0, height_percent / windowManager->GetAspectRatio(), height_percent);
-  this->AddView(teamLogo[0]);
-  teamLogo[0]->LoadImage(match->GetTeam(0)->GetTeamData()->GetLogoUrl());
-  teamLogo[0]->Show();
-
-  teamLogo[1] = new Gui2Image(windowManager, "game_scoreboard_team2logo", xOffset[5], 0, height_percent / windowManager->GetAspectRatio(), height_percent);
-  this->AddView(teamLogo[1]);
-  teamLogo[1]->LoadImage(match->GetTeam(1)->GetTeamData()->GetLogoUrl());
-  teamLogo[1]->Show();
+  LayoutContent();
 
   this->Show();
 }
@@ -138,15 +126,48 @@ void Gui2ScoreBoard::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &ta
 void Gui2ScoreBoard::Redraw() {
 }
 
+void Gui2ScoreBoard::LayoutContent() {
+  // Centre every dynamic text surface inside a stable semantic slot. Caption
+  // widgets resize to their rendered text, so fixed left coordinates make
+  // short team names and one-digit scores look visibly unbalanced.
+  const float contentY = (height_percent - height_percent * 0.9f) * 0.5f;
+  const float timeCenter = 3.9f;
+  const float homeNameCenter = 14.4f;
+  const float homeScoreCenter = 22.2f;
+  const float competitionCenter = 27.4f;
+  const float awayScoreCenter = 32.6f;
+  const float awayNameCenter = 40.2f;
+
+  timeCaption->SetPosition(timeCenter - timeCaption->GetTextWidthPercent() * 0.5f,
+                           contentY);
+  teamNameCaption[0]->SetPosition(
+      homeNameCenter - teamNameCaption[0]->GetTextWidthPercent() * 0.5f,
+      contentY);
+  goalCountCaption[0]->SetPosition(
+      homeScoreCenter - goalCountCaption[0]->GetTextWidthPercent() * 0.5f,
+      contentY);
+  goalCountCaption[1]->SetPosition(
+      awayScoreCenter - goalCountCaption[1]->GetTextWidthPercent() * 0.5f,
+      contentY);
+  teamNameCaption[1]->SetPosition(
+      awayNameCenter - teamNameCaption[1]->GetTextWidthPercent() * 0.5f,
+      contentY);
+
+  const float logoHeight = 5.0f;
+  const float logoWidth = logoHeight / windowManager->GetAspectRatio();
+  leagueLogo->SetSize(logoWidth, logoHeight);
+  leagueLogo->SetPosition(competitionCenter - logoWidth * 0.5f,
+                          (height_percent - logoHeight) * 0.5f);
+}
+
 void Gui2ScoreBoard::SetTimeStr(const std::string &timeStr) {
   this->timeStr = timeStr;
   timeCaption->SetCaption(timeStr);
+  LayoutContent();
 }
 
 void Gui2ScoreBoard::SetGoalCount(int teamID, int goalCount) {
   this->goalCount[teamID] = goalCount;
-  std::string goalStr = "";
-  if (goalCount < 10) goalStr.append(" ");
-  goalStr.append(int_to_str(goalCount));
-  goalCountCaption[teamID]->SetCaption(goalStr);
+  goalCountCaption[teamID]->SetCaption(int_to_str(goalCount));
+  LayoutContent();
 }

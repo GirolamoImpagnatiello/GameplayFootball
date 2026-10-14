@@ -807,7 +807,12 @@ void Match::SetRandomSunParams() {
   // At night, two opposed floodlight banks own the shadow maps. This creates
   // the short, crossed player shadows of a televised match without paying for
   // four additional 2048x2048 shadow maps.
-  sunLight->SetShadow(resolvedMode != "cloudy" && !isNight);
+  // The test stadium's roof/stands cast a very broad directional shadow that
+  // leaves one goal visibly darker than the other. Clear daytime therefore
+  // keeps the full direct-sun contribution but omits that stadium shadow map,
+  // producing the even exposure expected from the gameplay broadcast camera.
+  // Sunset retains long shadows as part of that profile's visual identity.
+  sunLight->SetShadow(resolvedMode == "sunset");
   sunLight->SetColor(profile.sunColor);
 
   const Vector3 floodlightColor = profile.stadiumLightColor * profile.stadiumLightIntensity;
@@ -2223,13 +2228,17 @@ void Match::UpdateDirectedCamera() {
   }
 
   const RefereeBuffer &restart = referee->GetBuffer();
-  const Vector3 cameraBallPosition = restart.active ? restart.restartPos : ballPosition;
-  const float cameraAttackingGoalSide = restart.active && restart.teamID >= 0 && restart.teamID <= 1
+  // The referee may prepare the following kickoff while the goal sequence is
+  // still active. Do not let that restart pull the broadcast camera to the
+  // centre circle during the deliberate post-goal hold.
+  const bool cameraRestartActive = restart.active && !IsGoalScored();
+  const Vector3 cameraBallPosition = cameraRestartActive ? restart.restartPos : ballPosition;
+  const float cameraAttackingGoalSide = cameraRestartActive && restart.teamID >= 0 && restart.teamID <= 1
       ? static_cast<float>(-GetTeam(restart.teamID)->GetSide())
       : (ballPosition.coords[0] < 0.0f ? -1.0f : 1.0f);
   Vector3 cameraPrimaryPlayerPosition = GetDesignatedPossessionPlayer() ?
       GetDesignatedPossessionPlayer()->GetPosition() : nearbyCenter;
-  if (restart.active) {
+  if (cameraRestartActive) {
     if (restart.taker) {
       cameraPrimaryPlayerPosition = restart.taker->GetPosition();
     } else {
@@ -2257,9 +2266,9 @@ void Match::UpdateDirectedCamera() {
   input.actionDirection = actionDirection;
   input.attackingGoalSide = cameraAttackingGoalSide;
   input.inPlay = IsInPlay();
-  input.setPieceActive = restart.active || IsInSetPiece();
-  input.setPiece = restart.active ? restart.desiredSetPiece : e_SetPiece_None;
-  input.setPieceStartTime_ms = restart.active ? restart.startTime : 0;
+  input.setPieceActive = !IsGoalScored() && (cameraRestartActive || IsInSetPiece());
+  input.setPiece = cameraRestartActive ? restart.desiredSetPiece : e_SetPiece_None;
+  input.setPieceStartTime_ms = cameraRestartActive ? restart.startTime : 0;
 
   const CameraDirectorOutput output = cameraDirector->Update(input);
   cameraNodePosition = output.position;
@@ -2272,10 +2281,12 @@ void Match::UpdateDirectedCamera() {
   cameraPhysicalId = output.cameraId;
   if (output.cut && !goalCameraWasActive) cameraCutPending = true;
 
-  // Cut directly to the scorer in the same update that registers the goal.
-  // Waiting one second allowed the kickoff restart to move the director's
-  // target to midfield first, producing a confusing intermediate shot.
-  if (IsGoalScored()) {
+  // Hold the broadcast master briefly after the goal so the ball crossing the
+  // line and the players' first reactions remain readable. Only then cut to
+  // the scorer; the delay is short enough to avoid the old midfield restart
+  // frame that appeared before the celebration camera.
+  const unsigned long celebrationCameraDelay_ms = 1800;
+  if (IsGoalScored() && goalScoredTimer >= celebrationCameraDelay_ms) {
     Vector3 targetPos = ball->Predict(0).Get2D();
     if (lastGoalScorer) targetPos = lastGoalScorer->GetPosition();
     const radian rotation = static_cast<float>(goalScoredTimer) * 0.0005f;

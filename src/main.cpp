@@ -161,6 +161,40 @@ static void ApplyCaptureResolutionPreset(Properties *configuration) {
   configuration->SetInt("context_y", height);
 }
 
+static void SetProfileRealIfMissing(Properties *configuration, const char *name, real value) {
+  if (!configuration->Exists(name)) configuration->Set(name, value);
+}
+
+static void ApplyAIGameplayProfile(Properties *configuration) {
+  std::string profile = configuration->Get("ai_gameplay_profile", "fast");
+  for (std::size_t i = 0; i < profile.size(); ++i) {
+    if (profile[i] >= 'A' && profile[i] <= 'Z') profile[i] += 'a' - 'A';
+  }
+
+  if (profile == "deliberate" || profile == "soft") {
+    SetProfileRealIfMissing(configuration, "ai_offensive_aggression", 0.85f);
+    SetProfileRealIfMissing(configuration, "ai_min_on_ball_ms", 900.0f);
+    SetProfileRealIfMissing(configuration, "ai_shot_max_distance", 30.0f);
+    SetProfileRealIfMissing(configuration, "ai_shot_min_quality", 0.56f);
+    SetProfileRealIfMissing(configuration, "ai_final_third_decision_ms", 3000.0f);
+    SetProfileRealIfMissing(configuration, "ai_cross_aggression", 1.0f);
+    SetProfileRealIfMissing(configuration, "ai_defensive_challenge_aggression", 0.9f);
+  } else if (profile == "fast") {
+    SetProfileRealIfMissing(configuration, "ai_offensive_aggression", 1.5f);
+    SetProfileRealIfMissing(configuration, "ai_min_on_ball_ms", 0.0f);
+    SetProfileRealIfMissing(configuration, "ai_shot_max_distance", 30.0f);
+    SetProfileRealIfMissing(configuration, "ai_shot_min_quality", 0.48f);
+    SetProfileRealIfMissing(configuration, "ai_final_third_decision_ms", 800.0f);
+    SetProfileRealIfMissing(configuration, "ai_cross_aggression", 1.35f);
+    SetProfileRealIfMissing(configuration, "ai_defensive_challenge_aggression", 1.15f);
+  } else {
+    Log(e_Warning, "main", "ApplyAIGameplayProfile",
+        "Unknown ai_gameplay_profile; using fast defaults");
+    configuration->Set("ai_gameplay_profile", "fast");
+    ApplyAIGameplayProfile(configuration);
+  }
+}
+
 boost::shared_ptr<Scene2D> GetScene2D() {
   return scene2D;
 }
@@ -350,6 +384,7 @@ int main(int argc, char **argv) {
   // Captures are framebuffer-native. Apply the requested recording tier
   // before graphics and Scene2D create their render targets.
   ApplyCaptureResolutionPreset(config);
+  ApplyAIGameplayProfile(config);
 
   Initialize(*config);
 

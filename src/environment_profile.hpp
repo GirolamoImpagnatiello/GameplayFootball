@@ -32,22 +32,24 @@ namespace blunted {
 
     EnvironmentProfile profile;
 
-    // Day deliberately preserves the established daytime rendering.
+    // Clear daytime uses a natural broadcast-style diagonal sunlight angle.
+    // Its stadium shadow map is disabled by Match::SetRandomSunParams so the
+    // two penalty areas remain evenly exposed.
     profile.sunPosition = Vector3(-1.2f, 0.4f, 1.0f);
-    profile.sunColor = Vector3(0.9f, 0.8f, 1.0f) * 1.4f;
-    profile.ambientTint = Vector3(0.9f, 1.0f, 1.2f);
-    profile.fogColor = Vector3(0.85f, 0.85f, 0.9f);
-    profile.skyColor = Vector3(0.85f, 0.85f, 0.9f);
+    profile.sunColor = Vector3(1.36f, 1.32f, 1.22f);
+    profile.ambientTint = Vector3(1.0f, 1.04f, 1.08f);
+    profile.fogColor = Vector3(0.82f, 0.88f, 0.98f);
+    profile.skyColor = Vector3(0.72f, 0.84f, 1.0f);
     profile.stadiumLightColor = Vector3(1.0f, 0.96f, 0.88f);
-    profile.ambientBrightness = 0.15f;
-    profile.ambientDesaturation = 0.7f;
-    profile.pitchAmbientScale = 0.65f;
+    profile.ambientBrightness = 0.25f;
+    profile.ambientDesaturation = 0.58f;
+    profile.pitchAmbientScale = 0.78f;
     // Depth fog is reserved for the cloudy lighting profile. Clear daytime,
     // sunset and night matches keep distant geometry fully crisp.
     profile.fogDensity = 0.0f;
-    profile.postBrightness = 1.0f;
-    profile.postContrast = 0.3f;
-    profile.postSaturation = 0.95f;
+    profile.postBrightness = 1.12f;
+    profile.postContrast = 0.18f;
+    profile.postSaturation = 1.0f;
     profile.stadiumLightIntensity = 0.0f;
     profile.rainIntensity = 0.0f;
     profile.wetPitch = 0.0f;
